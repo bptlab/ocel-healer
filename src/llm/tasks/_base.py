@@ -2,7 +2,6 @@ import sqlite3
 import textwrap
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, ClassVar, TYPE_CHECKING
 
 from pydantic import BaseModel
@@ -186,14 +185,14 @@ class IssueTask(ABC):
             if not db_file:
                 return
             # Artifacts live next to the data: <db_dir>/exploration/<db_stem>/
-            base_dir = Path(db_file).parent / "exploration"
-            profile = load_profile(db_file, base_dir)
+            # (report_store's default — shared with the dashboard and the CLI).
+            profile = load_profile(db_file)
             if profile is None:
                 return
             current = schema_fingerprint(conn)
             if profile.get("schema_fingerprint") != current:
                 return
-            guide = load_guide(db_file, base_dir)
+            guide = load_guide(db_file)
             if guide is not None and guide.get("source_fingerprint") != current:
                 guide = None  # stale guide: keep the facts, drop the prose
             hints = self.select_hints(profile, guide, row)
