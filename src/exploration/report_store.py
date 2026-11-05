@@ -2,35 +2,42 @@
 
 """Per-database storage for exploration artifacts.
 
-Each explored database gets its own directory under data/exploration/, keyed
-by the sqlite file's stem, so reports for different logs never overwrite each
-other:
+Artifacts live next to the data: each explored database gets its own
+directory under an `exploration/` folder beside the sqlite file, keyed by the
+file's stem, so reports for different logs never overwrite each other:
 
-    data/exploration/<db_stem>/exploration_profile.json
-    data/exploration/<db_stem>/exploration_guide.json
-    data/exploration/<db_stem>/exploration_report.md
+    <db_dir>/exploration/<db_stem>/exploration_profile.json
+    <db_dir>/exploration/<db_stem>/exploration_guide.json
+    <db_dir>/exploration/<db_stem>/exploration_report.md
+
+e.g. data/synthetic/exploration/order-management-corrupted/. This is the
+single convention shared by the dashboard, the CLI, the repair tasks' hint
+lookup and the evaluation; pass `base_dir` only to override it.
 """
 
 import json
 from pathlib import Path
 from typing import Any
 
-DEFAULT_BASE_DIR = Path("data/exploration")
+def default_base_dir(db_path: str | Path) -> Path:
+    """`<db_dir>/exploration` — where artifacts for `db_path` live by default."""
+    return Path(db_path).parent / "exploration"
 
 
-def exploration_dir(db_path: str | Path, base_dir: str | Path = DEFAULT_BASE_DIR) -> Path:
-    return Path(base_dir) / Path(db_path).stem
+def exploration_dir(db_path: str | Path, base_dir: str | Path | None = None) -> Path:
+    base = Path(base_dir) if base_dir is not None else default_base_dir(db_path)
+    return base / Path(db_path).stem
 
 
-def profile_path(db_path: str | Path, base_dir: str | Path = DEFAULT_BASE_DIR) -> Path:
+def profile_path(db_path: str | Path, base_dir: str | Path | None = None) -> Path:
     return exploration_dir(db_path, base_dir) / "exploration_profile.json"
 
 
-def guide_path(db_path: str | Path, base_dir: str | Path = DEFAULT_BASE_DIR) -> Path:
+def guide_path(db_path: str | Path, base_dir: str | Path | None = None) -> Path:
     return exploration_dir(db_path, base_dir) / "exploration_guide.json"
 
 
-def report_path(db_path: str | Path, base_dir: str | Path = DEFAULT_BASE_DIR) -> Path:
+def report_path(db_path: str | Path, base_dir: str | Path | None = None) -> Path:
     return exploration_dir(db_path, base_dir) / "exploration_report.md"
 
 
@@ -48,20 +55,20 @@ def _load_json(p: Path) -> dict[str, Any] | None:
         return None
 
 
-def load_guide(db_path: str | Path, base_dir: str | Path = DEFAULT_BASE_DIR) -> dict[str, Any] | None:
+def load_guide(db_path: str | Path, base_dir: str | Path | None = None) -> dict[str, Any] | None:
     return _load_json(guide_path(db_path, base_dir))
 
 
-def load_profile(db_path: str | Path, base_dir: str | Path = DEFAULT_BASE_DIR) -> dict[str, Any] | None:
+def load_profile(db_path: str | Path, base_dir: str | Path | None = None) -> dict[str, Any] | None:
     return _load_json(profile_path(db_path, base_dir))
 
 
-def load_report(db_path: str | Path, base_dir: str | Path = DEFAULT_BASE_DIR) -> str:
+def load_report(db_path: str | Path, base_dir: str | Path | None = None) -> str:
     p = report_path(db_path, base_dir)
     return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
-def guide_is_stale(db_path: str | Path, base_dir: str | Path = DEFAULT_BASE_DIR) -> bool:
+def guide_is_stale(db_path: str | Path, base_dir: str | Path | None = None) -> bool:
     """True when there is no guide or the log's *structure* changed since it
     was built (tables, object types, qualifiers). Value-level repairs do not
     invalidate the guide — its knowledge is about semantics, not values."""
