@@ -89,6 +89,7 @@ The dashboard opens in your browser (use `marimo edit src/dashboard.py` to also 
 - **Pick a log** from the *OCEL File* dropdown. It lists every `*.sqlite` under `data/` and preselects `data/synthetic/order-management-corrupted.sqlite`, a log with known, injected issues.
 - **Rule-based detection** runs immediately, with or without an LLM.
 - **LLM features** (exploration, repair suggestions) become available once Ollama is running and at least one model is pulled (next section). Pick the model in the *Model* dropdown.
+- **Long LLM tasks can be stopped.** While exploration, an LLM detection run or *Ask domain expert* is running, a progress line with an **⏹ Abort** button is shown. Aborting stops at once, including the request the model is working on. An aborted detection run keeps the verdicts it already has; an aborted exploration keeps the previous report. Only one LLM task runs at a time.
 
 > **Applying a repair modifies the selected `.sqlite` file in place.** To restore a bundled log, run `git checkout -- data/<path>.sqlite`. To keep the originals untouched, copy a log into `data/` under a new name and work on the copy.
 

@@ -1,10 +1,15 @@
+import http.client
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
+from contextlib import nullcontext
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
+
+from src.llm.cancel import Cancelled, current_token
 
 
 MODEL = os.getenv("OCEL_LLM_MODEL", "qwen3:8b")
@@ -61,15 +66,44 @@ def _post_chat(
         "temperature": 0.5,
         "stream": False,
     }).encode("utf-8")
-    req = urllib.request.Request(
-        f"{LLM_HOST}/v1/chat/completions",
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        payload = json.loads(resp.read().decode("utf-8"))
+    payload = json.loads(_post_json("/v1/chat/completions", body, timeout).decode("utf-8"))
     return payload["choices"][0]["message"]["content"].strip()
+
+
+def _post_json(path: str, body: bytes, timeout: float) -> bytes:
+    """POST `body` to LLM_HOST + path and return the raw response body.
+
+    Uses http.client (not urllib) so the connection can be registered with
+    the current job's CancelToken: an abort shuts the socket down and this
+    call raises `Cancelled` immediately instead of waiting for the timeout.
+    """
+    url = urllib.parse.urlsplit(LLM_HOST)
+    conn_cls = http.client.HTTPSConnection if url.scheme == "https" else http.client.HTTPConnection
+    conn = conn_cls(url.hostname, url.port, timeout=timeout)
+    token = current_token()
+    try:
+        with token.track(conn) if token is not None else nullcontext():
+            conn.connect()
+            if token is not None:
+                token.raise_if_cancelled()  # aborted while connecting
+            conn.request(
+                "POST", url.path.rstrip("/") + path, body=body,
+                headers={"Content-Type": "application/json"},
+            )
+            resp = conn.getresponse()
+            data = resp.read()
+    except (OSError, http.client.HTTPException) as e:
+        if token is not None and token.cancelled:
+            raise Cancelled() from e
+        raise
+    finally:
+        conn.close()
+    if resp.status >= 400:
+        raise urllib.error.HTTPError(
+            f"{LLM_HOST}{path}", resp.status,
+            f"{resp.reason}: {data[:300].decode('utf-8', 'replace')}", resp.headers, None,
+        )
+    return data
 
 
 def _strip_fences(text: str) -> str:
