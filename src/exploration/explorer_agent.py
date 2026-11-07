@@ -449,13 +449,17 @@ def explore_database(
     db_path: str | Path,
     *,
     model: str | None = None,
-    base_dir: str | Path = report_store.DEFAULT_BASE_DIR,
+    base_dir: str | Path | None = None,
     on_progress: ProgressFn | None = None,
 ) -> Path:
     """Full pipeline: profile → guide → report. Returns the report path.
 
     Writes exploration_profile.json, exploration_guide.json and
-    exploration_report.md into data/exploration/<db_stem>/.
+    exploration_report.md into <db_dir>/exploration/<db_stem>/ (or <base_dir>/<db_stem>/).
+
+    If the run is aborted (`src.llm.cancel.Cancelled` propagates out of the
+    LLM sections), only the deterministic profile has been written — the
+    previous guide and report are left untouched.
     """
     profile = profile_database(db_path)
     report_store.save_json(report_store.profile_path(db_path, base_dir), profile)

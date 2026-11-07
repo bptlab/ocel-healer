@@ -3,6 +3,7 @@ from typing import Callable, Iterable
 
 from src.detection.error_detection import _connect
 from src.llm import actions
+from src.llm.cancel import Cancelled
 from src.llm.client import LLMOutputInvalid, call_llm, call_task
 from src.llm.personas import BASE_PERSONA, compose as compose_persona
 from src.llm.tasks import get_task
@@ -108,6 +109,10 @@ def detect_all_with_llm(
     a progress indicator. Per-row exceptions are swallowed and surfaced as
     `flagged=False, rationale="<error>"` so a single bad row doesn't sink the
     whole sweep.
+
+    If the surrounding job is aborted (see `src.llm.cancel`), the sweep stops
+    at once and returns the verdicts collected so far — partial results stay
+    usable; the caller can tell via its CancelToken.
     """
     rows_list = list(rows)
     total = len(rows_list)
@@ -115,6 +120,8 @@ def detect_all_with_llm(
     for i, row in enumerate(rows_list, 1):
         try:
             verdict = detect_with_llm(issue_key, row, sqlite_path)
+        except Cancelled:
+            break
         except Exception as e:  # noqa: BLE001 -- surface any failure as a noop verdict
             verdict = DetectionResult(
                 flagged=False,

@@ -591,3 +591,25 @@ def row_preview_label(row: dict, i: int) -> str:
     ]
     preview = ", ".join(f"{k}={row[k]}" for k in preview_keys[:2]) or f"row {i}"
     return f"#{i}  {preview}"
+
+
+# ── Background LLM jobs (abortable) ─────────────────────────────────────
+
+def render_llm_job_running(mo, job: dict, abort_btn):
+    """One status line for a running background LLM job: label, step
+    counter + progress bar (when the job reports a total), the latest
+    progress text, and the shared Abort button."""
+    _progress = job.get("progress") or {}
+    _done = _progress.get("done") or 0
+    _total = _progress.get("total") or 0
+    _bits = [f"⏳ **{job['label']}…**"]
+    if _total:
+        _bits.append(f"{_done}/{_total}")
+    _bits.append(_progress.get("text") or "waiting for the model")
+    _items = [mo.md(" · ".join(_bits))]
+    if _total:
+        _items.append(mo.Html(
+            f'<progress value="{_done}" max="{_total}" style="width:200px"></progress>'
+        ))
+    _items.append(abort_btn)
+    return mo.hstack(_items, justify="start", align="center", gap=1)

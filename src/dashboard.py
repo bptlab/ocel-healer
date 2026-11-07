@@ -176,6 +176,88 @@ def llm_model_apply(model_picker, reachable, set_active_model):
     return (llm_enabled,)
 
 
+# ── Background LLM jobs (abortable) ─────────────────────────────────────
+
+@app.cell
+def llm_job_state(mo):
+    # Snapshot of the current/last job — reactive, drives the UI.
+    #   {id, kind, label, context, status, progress, result, error}
+    #   kind:   "explore" | "sweep" | "ask"
+    #   status: "running" | "done" | "cancelled" | "failed"
+    get_llm_job, set_llm_job = mo.state(None)
+    # Non-reactive holder: the live job dict, its CancelToken, and the ids of
+    # finished jobs whose results were already consumed.
+    llm_job_slot = {"job": None, "token": None, "consumed": set()}
+    return get_llm_job, llm_job_slot, set_llm_job
+
+
+@app.cell
+def llm_job_runner(llm_job_slot, mo, set_llm_job):
+    import itertools as _itertools
+
+    from src.llm import CancelToken as _CancelToken
+    from src.llm import Cancelled as _Cancelled
+    from src.llm import use_token as _use_token
+
+    _ids = _itertools.count(1)
+
+    def start_llm_job(kind, label, work, *, context=None):
+        """Run `work(progress)` in the background; return False if another
+        LLM job is still running. `progress(done, total, text)` updates the
+        status line; `work`'s return value becomes the job's `result` (also
+        when aborted, so partial results survive)."""
+        _current = llm_job_slot["job"]
+        if _current is not None and _current["status"] == "running":
+            return False
+        _token = _CancelToken()
+        _job = {
+            "id": next(_ids), "kind": kind, "label": label, "context": context or {},
+            "status": "running", "progress": None, "result": None, "error": None,
+        }
+        llm_job_slot["job"], llm_job_slot["token"] = _job, _token
+        set_llm_job(dict(_job))
+
+        def _publish(**changes):
+            _job.update(changes)
+            set_llm_job(dict(_job))
+
+        def _progress(done, total, text=""):
+            _publish(progress={"done": done, "total": total, "text": text})
+
+        def _target():
+            try:
+                with _use_token(_token):
+                    _result = work(_progress)
+                _publish(status="cancelled" if _token.cancelled else "done", result=_result)
+            except _Cancelled:
+                _publish(status="cancelled")
+            except Exception as e:  # noqa: BLE001 — surfaced in the UI
+                _publish(status="failed", error=str(e))
+
+        mo.Thread(target=_target, daemon=True).start()
+        return True
+
+    def busy_notice():
+        return mo.md(
+            "⏳ Another LLM task is still running — wait for it or press **Abort**."
+        ).callout(kind="warn")
+    return busy_notice, start_llm_job
+
+
+@app.cell
+def llm_abort_button(mo):
+    # One shared button, shown next to whichever job is running.
+    abort_btn = mo.ui.run_button(label="⏹ Abort", kind="danger")
+    return (abort_btn,)
+
+
+@app.cell
+def llm_abort_handler(abort_btn, llm_job_slot):
+    if abort_btn.value and llm_job_slot["token"] is not None:
+        llm_job_slot["token"].cancel()
+    return
+
+
 @app.cell
 def file_picker(DATA_DIR, mo):
     # Discover all sqlite files under data/ recursively, so files under
@@ -334,44 +416,79 @@ def exploration_button(llm_enabled, mo):
 
 
 @app.cell
-def exploration_run(DATA_DIR, explore_btn, explore_database, file_picker, load_guide, mo, model_picker):
-    # Runs the exploration agent for the selected log (~0.5 min per object
-    # type). The spinner subtitle mirrors the agent's per-section progress.
-    exploration_result = None
+def exploration_run(
+    DATA_DIR, busy_notice, explore_btn, explore_database, file_picker, model_picker, start_llm_job
+):
+    # Starts the exploration agent for the selected log as a background job
+    # (~0.5 min per object type); progress, Abort and the outcome are shown
+    # by `exploration_view`. Artifacts go next to the log
+    # (<db_dir>/exploration/<stem>/), where the repair tasks look hints up.
+    exploration_notice = None
     if explore_btn.value and file_picker.value:
         _db = str(DATA_DIR / file_picker.value)
         _model = model_picker.value if model_picker is not None else None
-        try:
-            with mo.status.spinner(title="Exploring the log…") as _spinner:
-                def _tick(name, i, total, _s=_spinner):
-                    _s.update(subtitle=f"{name} — step {i}/{total}")
-                explore_database(
-                    _db,
-                    model=_model,
-                    base_dir=DATA_DIR / "exploration",
-                    on_progress=_tick,
-                )
-            _warnings = (load_guide(_db, DATA_DIR / "exploration") or {}).get("warnings", [])
-            if _warnings:
-                exploration_result = mo.md(
-                    f"⚠️ Exploration finished with {len(_warnings)} warning(s) — "
-                    f"some sections may be empty. Last: `{_warnings[-1]}`"
-                ).callout(kind="warn")
-            else:
-                exploration_result = mo.md("✅ Exploration finished.").callout(kind="success")
-        except Exception as e:
-            exploration_result = mo.md(f"❌ Exploration failed: `{e}`").callout(kind="danger")
-    return (exploration_result,)
+
+        def _work(progress):
+            return explore_database(
+                _db,
+                model=_model,
+                on_progress=lambda name, i, total: progress(i, total, name),
+            )
+
+        if not start_llm_job("explore", "Exploring the log", _work, context={"db": _db}):
+            exploration_notice = busy_notice()
+    return (exploration_notice,)
 
 
 @app.cell
 def exploration_view(
-    DATA_DIR, dr, exploration_result, explore_btn, file_picker, guide_is_stale, load_report, mo
+    DATA_DIR,
+    abort_btn,
+    dr,
+    exploration_notice,
+    explore_btn,
+    file_picker,
+    get_llm_job,
+    guide_is_stale,
+    load_guide,
+    load_report,
+    mo,
 ):
-    _base = DATA_DIR / "exploration"
     _db = str(DATA_DIR / file_picker.value) if file_picker.value else None
-    _report = load_report(_db, _base) if _db else ""
-    _stale = guide_is_stale(_db, _base) if _db else True
+
+    # Outcome of the exploration job for this log (if one ran this session).
+    _job = get_llm_job()
+    _running = _job is not None and _job["status"] == "running"
+    _mine = _job is not None and _job["kind"] == "explore" and _job["context"].get("db") == _db
+    # The "another task is running" notice from `exploration_run` is only
+    # true while that other job runs — a run_button resets to False without
+    # re-running its cell, so the notice would otherwise linger.
+    _notice = exploration_notice if _running and not _mine else None
+    exploration_result = None
+    if _mine:
+        if _job["status"] == "running":
+            exploration_result = dr.render_llm_job_running(mo, _job, abort_btn)
+        elif _job["status"] == "cancelled":
+            exploration_result = mo.md(
+                "⏹ Exploration aborted — the previous report (if any) was kept."
+            ).callout(kind="warn")
+        elif _job["status"] == "failed":
+            exploration_result = mo.md(
+                f"❌ Exploration failed: `{_job['error']}`"
+            ).callout(kind="danger")
+        else:
+            _warnings = (load_guide(_db) or {}).get("warnings", [])
+            exploration_result = (
+                mo.md(
+                    f"⚠️ Exploration finished with {len(_warnings)} warning(s) — "
+                    f"some sections may be empty. Last: `{_warnings[-1]}`"
+                ).callout(kind="warn")
+                if _warnings
+                else mo.md("✅ Exploration finished.").callout(kind="success")
+            )
+
+    _report = load_report(_db) if _db else ""
+    _stale = guide_is_stale(_db) if _db else True
 
     if not _report:
         _status = mo.md(
@@ -405,6 +522,7 @@ def exploration_view(
         [
             _section_header,
             mo.hstack([explore_btn], justify="start"),
+            _notice or mo.md(""),
             exploration_result or mo.md(""),
             _status,
             _report_view,
@@ -1097,38 +1215,30 @@ def drill_shell_top(
 
 @app.cell
 def drill_llm_sweep(
+    busy_notice,
     candidate_noun,
     candidate_rows,
     ctx,
     detect_all_with_llm,
     detect_btn,
-    get_sweep_ordinal,
-    get_sweep_result,
-    mo,
-    set_banner_key,
-    set_sweep_ordinal,
-    set_sweep_ran,
-    get_sweep_ran,
-    set_sweep_result,
     sqlite_path,
+    start_llm_job,
     type_picker,
 ):
-    """Run the LLM sweep for the selected type. Writes the resulting
-    entry into ``get_sweep_result`` keyed by (path, issue_key, type) so
-    the panel below can render it on subsequent reactive cycles — after
-    ``detect_btn.value`` has flipped back to falsy.
+    """Start the LLM sweep for the selected type as a background job.
 
     Candidate rows are sourced per issue_key via
     ``src.llm.candidate_sources.candidate_rows`` — some tasks judge one row
     per object of the chosen type, others judge one row per (object,
     attribute) pair. The sweep code itself is uniform across shapes; the
     per-key differences live in the row source and the ``candidate_noun``
-    used in the progress bar.
+    used in the status line.
 
-    The progress bar is opened here so its live output slot renders in
-    this cell's position. Cell source order is arranged so this slot
-    lands between the drill subsection header/controls (drill_shell_top)
-    and the proposal cards / rule table / fix stack (drill_shell_bottom)."""
+    Progress, Abort and recording the verdicts happen in
+    ``drill_llm_sweep_status`` (next cell), so the status line renders
+    between the drill subsection header/controls (drill_shell_top) and the
+    proposal cards / rule table / fix stack (drill_shell_bottom)."""
+    sweep_notice = None
     _issue_key = ctx["issue_key"]
     if (
         ctx["mode"] in ("llm_pending", "llm_with_flags")
@@ -1136,105 +1246,164 @@ def drill_llm_sweep(
         and type_picker.value
         and _issue_key is not None
     ):
-        chosen_type = type_picker.value
-        candidates = candidate_rows(_issue_key, sqlite_path, chosen_type)
-        total = len(candidates)
+        _chosen_type = type_picker.value
+        _candidates = candidate_rows(_issue_key, sqlite_path, _chosen_type)
+        _total = len(_candidates)
         _noun = candidate_noun(_issue_key)
 
-        _proposals: list = []
-        if total == 0:
-            _summary_text = f"No {_noun}s found for type `{chosen_type}`."
-            _verdict_count = 0
-        else:
-            flagged_count = [0]
+        def _work(progress):
+            if not _candidates:
+                return []
+            _flagged = [0]
 
-            def _on_progress(i, _total, _row, verdict, bar):
+            def _on_verdict(i, total, _row, verdict):
                 if verdict.flagged:
-                    flagged_count[0] += 1
-                bar.update(
-                    increment=1,
-                    subtitle=f"{i}/{_total} judged · {flagged_count[0]} flagged so far",
-                )
+                    _flagged[0] += 1
+                progress(i, total, f"{_flagged[0]} flagged so far")
 
-            with mo.status.progress_bar(
-                total=total,
-                title=f"Judging {total} `{chosen_type}` {_noun}(s)…",
-                subtitle=f"0/{total} judged · 0 flagged so far",
-            ) as _bar:
-                verdicts = detect_all_with_llm(
-                    _issue_key,
-                    candidates,
-                    sqlite_path,
-                    on_progress=lambda i, t, r, v: _on_progress(i, t, r, v, _bar),
-                )
-            for _row, _verdict in verdicts:
-                if not _verdict.flagged:
-                    continue
-                # Fan-out for schema-suggestion detectors: one LLM call
-                # per type returns a *list* of suggested attributes, but
-                # the drill-in UX expects one Confirm/Dismiss card per
-                # atomic suggestion. Split the list into N proposals here
-                # so downstream cells (buttons / render / confirm-observer /
-                # dismiss-observer / flag_key) each see one attribute at
-                # a time. Non-list suggested_value is unchanged — the
-                # existing single-proposal detectors go through the fall-
-                # through branch untouched.
-                if (
-                    _issue_key in ("missing_object_attribute", "missing_event_attribute")
-                    and isinstance(_verdict.suggested_value, list)
-                ):
-                    from src.llm.tasks._base import DetectionResult
-                    for _item in _verdict.suggested_value:
-                        if not isinstance(_item, dict):
-                            continue
-                        _name = str(_item.get("name") or "").strip()
-                        if not _name:
-                            continue
-                        _fan_row = {**dict(_row), "attribute": _name}
-                        _fan_verdict = DetectionResult(
-                            flagged=True,
-                            rationale=str(_item.get("rationale") or _verdict.rationale or ""),
-                            confidence=float(_item.get("confidence") or _verdict.confidence or 0.0),
-                            suggested_value=_item,
-                        )
-                        _proposals.append({"row": _fan_row, "verdict": _fan_verdict})
-                else:
-                    _proposals.append({"row": dict(_row), "verdict": _verdict})
-            _verdict_count = len(verdicts)
-            _summary_text = (
-                f"Judged **{_verdict_count}** `{chosen_type}` {_noun}(s) → "
-                f"**{len(_proposals)}** proposed flag(s)."
+            progress(0, _total, "0 flagged so far")
+            return detect_all_with_llm(
+                _issue_key, _candidates, sqlite_path, on_progress=_on_verdict
             )
 
-        _key = (sqlite_path, _issue_key, chosen_type)
-        _all = dict(get_sweep_result())
-        # Preserve first-sweep vertical position on re-runs of the same type;
-        # fresh types get the next ordinal.
-        _existing = _all.get(_key)
-        if _existing is not None:
-            _order = _existing["order"]
-        else:
-            _order = get_sweep_ordinal() + 1
-            set_sweep_ordinal(_order)
-        _all[_key] = {
-            "proposals":     _proposals,
-            "summary_text":  _summary_text,
-            "dismissed":     set(),   # re-sweep resets dismissals (per plan)
-            "total_judged":  _verdict_count,
-            "flagged_count": len(_proposals),
-            "chosen_type":   chosen_type,
-            "order":         _order,
-        }
-        set_sweep_result(_all)
-        # Show the "Judged N … → K proposed flag(s)" banner for exactly
-        # this sweep; cleared by any subsequent user interaction.
-        set_banner_key((sqlite_path, _issue_key, chosen_type))
+        _started = start_llm_job(
+            "sweep",
+            f"Judging {_total} `{_chosen_type}` {_noun}(s)",
+            _work,
+            context={
+                "sqlite_path": sqlite_path,
+                "issue_key": _issue_key,
+                "chosen_type": _chosen_type,
+                "total": _total,
+                "noun": _noun,
+            },
+        )
+        if not _started:
+            sweep_notice = busy_notice()
+    return (sweep_notice,)
 
-        _marker = (sqlite_path, _issue_key)
-        _ran = set(get_sweep_ran())
-        if _marker not in _ran:
-            _ran.add(_marker)
-            set_sweep_ran(_ran)
+
+@app.cell
+def drill_llm_sweep_status(
+    abort_btn,
+    dr,
+    get_llm_job,
+    get_sweep_ordinal,
+    get_sweep_ran,
+    get_sweep_result,
+    llm_job_slot,
+    mo,
+    set_banner_key,
+    set_sweep_ordinal,
+    set_sweep_ran,
+    set_sweep_result,
+    sweep_notice,
+):
+    """Status line of a running sweep (with Abort), and — once the sweep
+    job ends — record its verdicts into ``get_sweep_result`` keyed by
+    (path, issue_key, type) so the panel below can render them.
+
+    An aborted sweep is recorded too: the verdicts judged before the abort
+    become proposals as usual, and the summary says it was aborted. Each
+    finished job is recorded exactly once (``llm_job_slot["consumed"]``)."""
+    _job = get_llm_job()
+    # The "another task is running" notice from `drill_llm_sweep` is only
+    # true while that job runs (a run_button resets without a re-run).
+    _view = sweep_notice if _job is not None and _job["status"] == "running" else None
+    if _job is not None and _job["kind"] == "sweep":
+        if _job["status"] == "running":
+            _view = dr.render_llm_job_running(mo, _job, abort_btn)
+        elif _job["status"] == "failed":
+            _view = mo.md(f"❌ LLM detection failed: `{_job['error']}`").callout(kind="danger")
+        elif _job["id"] not in llm_job_slot["consumed"]:
+            llm_job_slot["consumed"].add(_job["id"])
+            _c = _job["context"]
+            _sqlite_path, _issue_key, chosen_type = _c["sqlite_path"], _c["issue_key"], _c["chosen_type"]
+            total, _noun = _c["total"], _c["noun"]
+            verdicts = _job["result"] or []
+            _aborted = _job["status"] == "cancelled"
+
+            _proposals: list = []
+            if total == 0:
+                _summary_text = f"No {_noun}s found for type `{chosen_type}`."
+                _verdict_count = 0
+            else:
+                for _row, _verdict in verdicts:
+                    if not _verdict.flagged:
+                        continue
+                    # Fan-out for schema-suggestion detectors: one LLM call
+                    # per type returns a *list* of suggested attributes, but
+                    # the drill-in UX expects one Confirm/Dismiss card per
+                    # atomic suggestion. Split the list into N proposals here
+                    # so downstream cells (buttons / render / confirm-observer /
+                    # dismiss-observer / flag_key) each see one attribute at
+                    # a time. Non-list suggested_value is unchanged — the
+                    # existing single-proposal detectors go through the fall-
+                    # through branch untouched.
+                    if (
+                        _issue_key in ("missing_object_attribute", "missing_event_attribute")
+                        and isinstance(_verdict.suggested_value, list)
+                    ):
+                        from src.llm.tasks._base import DetectionResult
+                        for _item in _verdict.suggested_value:
+                            if not isinstance(_item, dict):
+                                continue
+                            _name = str(_item.get("name") or "").strip()
+                            if not _name:
+                                continue
+                            _fan_row = {**dict(_row), "attribute": _name}
+                            _fan_verdict = DetectionResult(
+                                flagged=True,
+                                rationale=str(_item.get("rationale") or _verdict.rationale or ""),
+                                confidence=float(_item.get("confidence") or _verdict.confidence or 0.0),
+                                suggested_value=_item,
+                            )
+                            _proposals.append({"row": _fan_row, "verdict": _fan_verdict})
+                    else:
+                        _proposals.append({"row": dict(_row), "verdict": _verdict})
+                _verdict_count = len(verdicts)
+                _summary_text = (
+                    f"Judged **{_verdict_count}** `{chosen_type}` {_noun}(s) → "
+                    f"**{len(_proposals)}** proposed flag(s)."
+                )
+                if _aborted:
+                    _summary_text = (
+                        f"⏹ Aborted after {_verdict_count} of {total}. " + _summary_text
+                    )
+
+            _key = (_sqlite_path, _issue_key, chosen_type)
+            _all = dict(get_sweep_result())
+            # Preserve first-sweep vertical position on re-runs of the same type;
+            # fresh types get the next ordinal.
+            _existing = _all.get(_key)
+            if _existing is not None:
+                _order = _existing["order"]
+            else:
+                _order = get_sweep_ordinal() + 1
+                set_sweep_ordinal(_order)
+            _all[_key] = {
+                "proposals":     _proposals,
+                "summary_text":  _summary_text,
+                "dismissed":     set(),   # re-sweep resets dismissals (per plan)
+                "total_judged":  _verdict_count,
+                "flagged_count": len(_proposals),
+                "chosen_type":   chosen_type,
+                "order":         _order,
+            }
+            set_sweep_result(_all)
+            # Show the "Judged N … → K proposed flag(s)" banner for exactly
+            # this sweep; cleared by any subsequent user interaction.
+            set_banner_key((_sqlite_path, _issue_key, chosen_type))
+
+            # Mark the issue as swept even after an abort: the partial
+            # proposals can be confirmed, and confirmed flags must be counted
+            # in the Issue Overview instead of showing the cell as pending.
+            _marker = (_sqlite_path, _issue_key)
+            _ran = set(get_sweep_ran())
+            if _marker not in _ran:
+                _ran.add(_marker)
+                set_sweep_ran(_ran)
+    _view
     return
 
 
@@ -1849,54 +2018,127 @@ def drill_fix_buttons(ctx, fix_rows, llm_enabled, mo):
 
 
 @app.cell
-def drill_fix_suggest(
+def drill_fix_target(ctx, fix_rows, row_picker, sqlite_path):
+    """The row "Ask domain expert" would ask about, as
+    ``{"key", "src_key", "row"}`` — or None when no row is picked. ``key``
+    identifies the exact row so an answer is only ever shown under the row
+    it was asked for."""
+    ask_target = None
+    _idx = getattr(row_picker, "value", None)
+    if fix_rows and _idx is not None and _idx < len(fix_rows):
+        _row = fix_rows[_idx]
+        _src_key = _row.get("_source_issue_key") or ctx["issue_key"]
+        # Strip the tag before handing the row to the LLM layer.
+        _clean = {k: v for k, v in _row.items() if not k.startswith("_")}
+        ask_target = {
+            "key": (sqlite_path, _src_key, repr(sorted(_clean.items()))),
+            "src_key": _src_key,
+            "row": _clean,
+        }
+    return (ask_target,)
+
+
+@app.cell
+def drill_fix_ask(
     ask_btn,
+    ask_target,
+    busy_notice,
     ctx,
-    dr,
     fix_rows,
     llm_enabled,
     mo,
     row_picker,
     sqlite_path,
+    start_llm_job,
     suggest_repair,
 ):
+    # Starts "Ask domain expert" as a background job. Kept separate from
+    # `drill_fix_suggest`, which renders the job: marimo attributes state
+    # updates made by a mo.Thread to the cell that started it, and a cell is
+    # never re-run by its own state updates — so the starting cell must not be
+    # the one that displays the result.
+    ask_notice = None
+    if (
+        ctx["mode"] in ("rule", "llm_with_flags")
+        and llm_enabled
+        and ask_btn.value
+        and fix_rows
+        and getattr(row_picker, "value", None) is not None
+    ):
+        if ask_target is None:
+            ask_notice = mo.md("_Pick a row first._")
+        else:
+            _target = ask_target
+            if not start_llm_job(
+                "ask",
+                "Asking the domain expert",
+                lambda progress: suggest_repair(_target["src_key"], _target["row"], sqlite_path),
+                context={"target": _target["key"]},
+            ):
+                ask_notice = busy_notice()
+    return (ask_notice,)
+
+
+@app.cell
+def drill_fix_suggest(
+    abort_btn,
+    ask_notice,
+    ask_target,
+    ctx,
+    dr,
+    get_llm_job,
+    llm_enabled,
+    mo,
+):
+    # Renders the "Ask domain expert" job for the currently picked row:
+    # status line + Abort while it runs, then the suggestion (or the abort /
+    # error message). A suggestion for a different row is never shown here.
     suggestion = None
     override_input = None
     suggest_view = None
+    _job = get_llm_job()
     if ctx["mode"] not in ("rule", "llm_with_flags"):
         pass
     elif not llm_enabled:
         suggest_view = mo.md("_Enable Ollama to use the domain expert._")
     elif (
-        ask_btn.value
-        and fix_rows
-        and getattr(row_picker, "value", None) is not None
+        ask_target is not None
+        and _job is not None
+        and _job["kind"] == "ask"
+        and _job["context"].get("target") == ask_target["key"]
     ):
-        idx = row_picker.value
-        if idx is None or idx >= len(fix_rows):
-            suggest_view = mo.md("_Pick a row first._")
+        # This row's own job wins over any notice from `drill_fix_ask`:
+        # pressing Ask twice for the same row must not hide its progress.
+        if _job["status"] == "running":
+            suggest_view = dr.render_llm_job_running(mo, _job, abort_btn)
+        elif _job["status"] == "cancelled":
+            suggest_view = mo.md("⏹ Aborted — no suggestion.").callout(kind="warn")
+        elif _job["status"] == "failed":
+            suggest_view = mo.md(
+                f"❌ LLM call failed: `{_job['error']}`"
+            ).callout(kind="danger")
         else:
-            _row = fix_rows[idx]
-            _src_key = _row.get("_source_issue_key") or ctx["issue_key"]
-            # Strip the tag before handing the row to the LLM layer.
-            _clean = {k: v for k, v in _row.items() if not k.startswith("_")}
-            try:
-                suggestion = suggest_repair(_src_key, _clean, sqlite_path)
-                action_view = dr.render_action(mo, suggestion)
-                if dr.is_routable(suggestion):
-                    override_input = mo.ui.text(
-                        value="",
-                        label="Override (empty = use suggestion; JSON or raw text)",
-                        full_width=True,
-                    )
-                    suggest_view = mo.vstack(
-                        [action_view, override_input],
-                        gap=0.5,
-                    )
-                else:
-                    suggest_view = action_view
-            except Exception as e:
-                suggest_view = mo.md(f"❌ LLM call failed: `{e}`").callout(kind="danger")
+            suggestion = _job["result"]
+            action_view = dr.render_action(mo, suggestion)
+            if dr.is_routable(suggestion):
+                override_input = mo.ui.text(
+                    value="",
+                    label="Override (empty = use suggestion; JSON or raw text)",
+                    full_width=True,
+                )
+                suggest_view = mo.vstack(
+                    [action_view, override_input],
+                    gap=0.5,
+                )
+            else:
+                suggest_view = action_view
+    elif ask_notice is not None and (
+        ask_target is None or (_job is not None and _job["status"] == "running")
+    ):
+        # "Pick a row first" (no target) always holds; "another task is
+        # running" only while that job runs — a run_button resets to False
+        # without re-running `drill_fix_ask`, so the notice would linger.
+        suggest_view = ask_notice
     return override_input, suggest_view, suggestion
 
 
