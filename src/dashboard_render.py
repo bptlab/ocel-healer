@@ -105,8 +105,7 @@ DETECTOR_TD_STYLE = (
 
 DASH_HTML = '<span style="color:#57606a;">—</span>'
 PENDING_HTML = (
-    '<span title="Detector implemented but the LLM sweep has not been '
-    'run yet for this file." style="display:inline-block; padding:1px 8px; '
+    '<span style="display:inline-block; padding:1px 8px; '
     'border-radius:10px; font-size:12px; font-weight:700; color:#9a6700; '
     'background:#fff8c5;">?</span>'
 )
@@ -116,8 +115,7 @@ PENDING_HTML = (
 # value has no declared datatype, so the datatype-missing cell can't have
 # any content by construction.
 NA_HTML = (
-    '<span title="Not applicable — a missing value has no declared datatype." '
-    'style="display:inline-block; padding:1px 8px; border-radius:10px; '
+    '<span style="display:inline-block; padding:1px 8px; border-radius:10px; '
     'font-size:12px; font-weight:700; color:#57606a; background:#eaeef2;">N/A</span>'
 )
 
@@ -281,6 +279,19 @@ def coverage_popover_html(cov: dict) -> str:
             f'{_prop} proposed · {_conf} confirmed'
         )
     return f'<div class="oh-pop">{_text}</div>'
+
+
+def simple_popover_html(text: str) -> str:
+    """Hover card with a single line of text, same look as the coverage one."""
+    return f'<div class="oh-pop">{_html.escape(text)}</div>'
+
+
+def na_popover_text(row_label: str) -> str:
+    """Why an N/A cell is not applicable: "Missing" cells are the datatype
+    columns, the "Incorrect" ones are the schema-level attribute columns."""
+    if row_label.startswith("Missing"):
+        return "Not applicable: a missing value has no datatype"
+    return "Not applicable: schema issue, not a data issue"
 
 
 def coverage_table_html(cov: dict) -> str:
@@ -457,6 +468,7 @@ def render_overview_table_html(
             )
             _cov = _spec.get("coverage")
             _td_class = ""
+            _popover = ""
             if _kind == "none":
                 _content = DASH_HTML
             elif _kind == "na":
@@ -470,12 +482,22 @@ def render_overview_table_html(
                 )
             else:
                 _content = pill_html(_spec["count"])
+                _n = _spec["count"]
+                _popover = simple_popover_html(
+                    f'{_n} {"issue" if _n == 1 else "issues"} · select to open'
+                )
             if _cov and _kind in ("pending", "count"):
+                _popover = coverage_popover_html(_cov)
+            elif _kind == "na":
+                _popover = simple_popover_html(
+                    na_popover_text(_spec["row_label"])
+                )
+            if _popover:
                 # Hover card; flip it to open leftwards in the last columns
                 # so it stays inside the table.
                 _flip = " oh-right" if _c_idx >= len(cols_flat) - 3 else ""
                 _td_class = f' class="oh-cov{_flip}"'
-                _content += coverage_popover_html(_cov)
+                _content += _popover
             _row_cells.append(f'<td{_td_class} style="{_style}">{_content}</td>')
         _body_rows.append("<tr>" + "".join(_row_cells) + "</tr>")
 
