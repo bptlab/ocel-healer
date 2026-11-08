@@ -349,7 +349,7 @@ def coverage_summary_html(cell_meta: dict[str, dict]) -> str:
         '<div style="margin-top:10px; font-family:system-ui,-apple-system,sans-serif; '
         'font-size:12px; color:#57606a;">'
         f'LLM sweeps: <b style="color:#1f2328;">{_done} of {_all}</b> type scans done'
-        '<div style="margin-top:4px; height:4px; max-width:320px; border-radius:2px; '
+        '<div style="margin-top:4px; height:4px; width:100%; border-radius:2px; '
         'background:#eaeef2; overflow:hidden;">'
         f'<div style="width:{_pct}%; height:100%; background:#0969da;"></div>'
         '</div></div>'
