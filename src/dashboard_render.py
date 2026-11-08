@@ -9,6 +9,7 @@ they do not own any reactive state themselves.
 from __future__ import annotations
 
 import hashlib
+import html as _html
 import json as _json
 from typing import Any, Callable, Iterable
 
@@ -139,6 +140,222 @@ def badge_html(n: int) -> str:
     return pill_html(n)
 
 
+# ── Sweep coverage (per-type LLM sweeps in the overview) ─────────────────
+#
+# LLM detectors that sweep one object/event type at a time only know about
+# the types the user has already swept. The overview cell therefore carries
+# a `coverage` dict next to its count so the table can say "2/5 types" and
+# the hover can list which types are still unscanned:
+#
+#   {"state": "none" | "partial" | "complete",
+#    "scanned": int, "total": int, "noun": "event" | "object" | "event/object",
+#    "types": [{"name", "kind", "key", "scanned", "proposed", "confirmed"}]}
+
+def _flag_type(row: dict) -> str:
+    return str(
+        row.get("ocel_type") or row.get("object_type") or row.get("event_type") or ""
+    )
+
+
+def confirmed_by_key_type(flags: dict, sqlite_path: str) -> dict[tuple[str, str], int]:
+    """Bucket confirmed flags as ``{(issue_key, ocel_type): count}`` for one file.
+
+    Flags are keyed ``(sqlite_path, issue_key, ocel_id, extra)``; the type
+    lives on the flag row (copied from the candidate row at confirm time).
+    """
+    out: dict[tuple[str, str], int] = {}
+    for fk, row in flags.items():
+        if fk[0] != sqlite_path:
+            continue
+        bucket = (fk[1], _flag_type(row))
+        out[bucket] = out.get(bucket, 0) + 1
+    return out
+
+
+def build_cell_coverage(
+    keys: Iterable[str],
+    *,
+    llm_keys: set[str],
+    kind_of: Callable[[str], str],
+    types_by_kind: dict[str, list[str]],
+    sweep_result: dict,
+    sweep_ran: set,
+    confirmed: dict[tuple[str, str], int],
+    sqlite_path: str,
+) -> dict | None:
+    """Coverage of a cell's per-type LLM sweeps, or ``None`` if the cell has
+    no sweep-based detector (rule-based cells are always complete).
+
+    A type counts as scanned when ``sweep_result`` holds an entry for
+    ``(sqlite_path, issue_key, type)``. Only LLM keys contribute; rule keys
+    in a mixed cell are ignored here because they always cover everything.
+    """
+    llm = [k for k in keys if k in llm_keys]
+    if not llm:
+        return None
+    types: list[dict] = []
+    for key in llm:
+        kind = kind_of(key)
+        for name in types_by_kind.get(kind, []):
+            entry = sweep_result.get((sqlite_path, key, name))
+            types.append({
+                "name": name,
+                "kind": kind,
+                "key": key,
+                "scanned": entry is not None,
+                "proposed": int(entry["flagged_count"]) if entry else 0,
+                "confirmed": confirmed.get((key, name), 0),
+            })
+    scanned = sum(1 for t in types if t["scanned"])
+    total = len(types)
+    ran = any((sqlite_path, k) in sweep_ran for k in llm)
+    if scanned == 0 and not ran:
+        state = "none"
+    elif scanned >= total:
+        state = "complete"
+    else:
+        state = "partial"
+    nouns = sorted({t["kind"] for t in types} or {kind_of(k) for k in llm})
+    return {
+        "state": state,
+        "scanned": scanned,
+        "total": total,
+        "noun": "/".join(nouns),
+        "types": types,
+    }
+
+
+_COVERAGE_CSS = (
+    "<style>"
+    ".oh-cov{position:relative;}"
+    ".oh-pop{display:none; position:absolute; z-index:50; top:100%; left:50%; "
+    "transform:translateX(-50%); padding:5px 9px; text-align:left; "
+    "white-space:nowrap; font-size:12px; font-weight:400; background:#ffffff; "
+    "color:#1f2328; border:1px solid #d0d7de; border-radius:6px; "
+    "box-shadow:0 4px 12px rgba(31,35,40,0.15);}"
+    ".oh-cov:hover .oh-pop{display:block;}"
+    ".oh-cov.oh-right .oh-pop{left:auto; right:0; transform:none;}"
+    "</style>"
+)
+
+
+def coverage_sublabel_html(cov: dict) -> str:
+    return (
+        '<span style="display:block; margin-top:2px; font-size:10px; '
+        'line-height:1.2; color:#57606a; font-weight:400;">'
+        f'{cov["scanned"]}/{cov["total"]} types</span>'
+    )
+
+
+def coverage_pill_html(n: int, cov: dict) -> str:
+    """Count pill for a sweep-based cell. A partially-swept cell gets a
+    dashed, hatched pill (and an amber 0 instead of a green one) so it does
+    not read as a complete, clean result."""
+    if cov["state"] != "partial":
+        return pill_html(n)
+    if n > 0:
+        colour, bg = "#cf222e", "#fde2e2"
+    else:
+        colour, bg = "#9a6700", "#fff8c5"
+    return (
+        f'<span style="display:inline-block; padding:0 7px; border-radius:10px; '
+        f'font-size:12px; font-weight:600; color:{colour}; '
+        f'border:1px dashed {colour}; '
+        f'background:repeating-linear-gradient(135deg,{bg},{bg} 3px,#ffffff 3px,#ffffff 5px);">'
+        f'{n}</span>'
+    )
+
+
+def coverage_popover_html(cov: dict) -> str:
+    """Hover card: one line with scan coverage and the proposed / confirmed
+    totals over the scanned types. The per-type breakdown lives in
+    :func:`coverage_table_html` (drill panel)."""
+    _noun = _html.escape(cov["noun"])
+    if cov["state"] == "none":
+        _text = f'Not scanned yet · 0 of {cov["total"]} {_noun} types'
+    else:
+        _prop = sum(t["proposed"] for t in cov["types"] if t["scanned"])
+        _conf = sum(t["confirmed"] for t in cov["types"] if t["scanned"])
+        _text = (
+            f'{cov["scanned"]} of {cov["total"]} {_noun} types · '
+            f'{_prop} proposed · {_conf} confirmed'
+        )
+    return f'<div class="oh-pop">{_text}</div>'
+
+
+def coverage_table_html(cov: dict) -> str:
+    """Compact coverage block for the drill panel: a green "Scanned" list
+    (with proposed / confirmed in brackets) and a grey "Not scanned" list,
+    each laid out as an aligned grid that fills the page width."""
+    _esc = _html.escape
+
+    def _grid(items: list[str], colour: str) -> str:
+        # Fill the full width: as many equal columns as fit, each at least
+        # as wide as the longest item (plus a gap), so long names get fewer
+        # columns instead of being cut off.
+        width = max(len(_html.unescape(i)) for i in items) + 4
+        cells = "".join(f"<span>{i}</span>" for i in items)
+        return (
+            f'<div style="display:grid; width:100%; gap:3px 16px; '
+            f'grid-template-columns:repeat(auto-fill, minmax({width}ch, 1fr)); '
+            f'color:{colour};">{cells}</div>'
+        )
+
+    _head = "margin:8px 0 2px 0; font-weight:600;"
+    _scanned = [
+        f'{_esc(t["name"])} ({t["proposed"]} / {t["confirmed"]})'
+        for t in cov["types"] if t["scanned"]
+    ]
+    _open = [_esc(t["name"]) for t in cov["types"] if not t["scanned"]]
+    _parts = [
+        f'<div style="font-weight:600;">Coverage: {cov["scanned"]} of '
+        f'{cov["total"]} {_esc(cov["noun"])} types</div>'
+    ]
+    if _scanned:
+        _parts.append(
+            f'<div style="{_head} color:#1a7f37;">Scanned ({len(_scanned)}) '
+            f'<span style="font-weight:400; color:#57606a;">'
+            f'(proposed / confirmed)</span></div>'
+            + _grid(_scanned, "#1a7f37")
+        )
+    if _open:
+        _parts.append(
+            f'<div style="{_head} color:#8c959f;">Not scanned ({len(_open)})</div>'
+            + _grid(_open, "#8c959f")
+        )
+    _parts.append(
+        '<div style="margin-top:8px; color:#57606a;">Pick another type to '
+        'sweep, or re-select a scanned type to re-run it.</div>'
+    )
+    return (
+        '<div style="font-family:system-ui,-apple-system,sans-serif; '
+        f'font-size:13px;">{"".join(_parts)}</div>'
+    )
+
+
+def coverage_summary_html(cell_meta: dict[str, dict]) -> str:
+    """One-line total of finished type sweeps across the whole overview plus
+    a thin progress bar. Empty string if no cell is sweep-based."""
+    _done = _all = 0
+    for spec in cell_meta.values():
+        cov = spec.get("coverage")
+        if cov:
+            _done += cov["scanned"]
+            _all += cov["total"]
+    if _all == 0:
+        return ""
+    _pct = round(100 * _done / _all)
+    return (
+        '<div style="margin-top:10px; font-family:system-ui,-apple-system,sans-serif; '
+        'font-size:12px; color:#57606a;">'
+        f'LLM sweeps: <b style="color:#1f2328;">{_done} of {_all}</b> type scans done'
+        '<div style="margin-top:4px; height:4px; max-width:320px; border-radius:2px; '
+        'background:#eaeef2; overflow:hidden;">'
+        f'<div style="width:{_pct}%; height:100%; background:#0969da;"></div>'
+        '</div></div>'
+    )
+
+
 def render_section_header_html(title: str, subtitle: str = "") -> str:
     """Standard section header used across the dashboard.
 
@@ -188,7 +405,11 @@ def render_overview_table_html(
     - `kind == "na"` → renders `NA_HTML` (intentionally not applicable,
       distinct from `none` which merely means "no detector mapped yet").
     - `kind == "pending"` → renders `PENDING_HTML`.
-    - `kind == "count"` → renders `pill_html(count)`.
+    - `kind == "count"` → renders `pill_html(count)`; sweep-based cells
+      (spec carries `coverage`, see `build_cell_coverage`) instead render
+      `coverage_pill_html` + an `x/y types` sub-label.
+    - Sweep-based cells in state pending/count also get a CSS-only hover
+      card (`coverage_popover_html`).
 
     The cell whose `issue_key` equals `selected_issue_key` is styled with
     `SUMMARY_TD_SELECTED_STYLE` instead of `SUMMARY_TD_STYLE` so the user
@@ -234,18 +455,32 @@ def render_overview_table_html(
             _style = (
                 SUMMARY_TD_SELECTED_STYLE if _is_selected else SUMMARY_TD_STYLE
             )
+            _cov = _spec.get("coverage")
+            _td_class = ""
             if _kind == "none":
                 _content = DASH_HTML
             elif _kind == "na":
                 _content = NA_HTML
             elif _kind == "pending":
                 _content = PENDING_HTML
+            elif _cov:
+                _content = (
+                    coverage_pill_html(_spec["count"], _cov)
+                    + coverage_sublabel_html(_cov)
+                )
             else:
                 _content = pill_html(_spec["count"])
-            _row_cells.append(f'<td style="{_style}">{_content}</td>')
+            if _cov and _kind in ("pending", "count"):
+                # Hover card; flip it to open leftwards in the last columns
+                # so it stays inside the table.
+                _flip = " oh-right" if _c_idx >= len(cols_flat) - 3 else ""
+                _td_class = f' class="oh-cov{_flip}"'
+                _content += coverage_popover_html(_cov)
+            _row_cells.append(f'<td{_td_class} style="{_style}">{_content}</td>')
         _body_rows.append("<tr>" + "".join(_row_cells) + "</tr>")
 
     return (
+        f"{_COVERAGE_CSS}"
         f'<table style="{SUMMARY_TABLE_STYLE}">'
         f"<thead>{_group_row}{_col_row}</thead>"
         f"<tbody>{''.join(_body_rows)}</tbody>"

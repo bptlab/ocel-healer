@@ -616,12 +616,18 @@ def overview_config():
 @app.cell
 def overview_meta(
     MERGED_KEYS,
+    candidate_kind,
     cols_flat,
+    connect_sqlite,
+    dr,
+    event_type_tables,
     get_flags,
     get_sweep_ran,
+    get_sweep_result,
     llm_detected_keys,
     mapping,
     na_cells,
+    object_type_tables,
     results,
     rows,
     sqlite_path,
@@ -638,7 +644,10 @@ def overview_meta(
        "count": int | None,
        "row_label": str,
        "col_label": str,
-       "issue_key": str | None}
+       "issue_key": str | None,
+       "coverage": dict | None}   # per-type sweep coverage, see
+                                  # dr.build_cell_coverage; None for
+                                  # rule-only / none / na cells
 
     Cells with no mapped detector have kind == "none" (rendered as a dash).
     Cells listed in `na_cells` have kind == "na" (rendered as an N/A badge —
@@ -656,30 +665,50 @@ def overview_meta(
         if k[0] == sqlite_path:
             _llm_confirmed_by_key[k[1]] = _llm_confirmed_by_key.get(k[1], 0) + 1
     _sweep_ran = get_sweep_ran()
+    _sweep_result = get_sweep_result()
+    _confirmed_by_type = dr.confirmed_by_key_type(get_flags(), sqlite_path)
+    # Type universe per side, so a sweep cell can say "2 of 5 types scanned".
+    with connect_sqlite(sqlite_path) as _conn:
+        _types_by_kind = {
+            "event": [t for t, _ in event_type_tables(_conn)],
+            "object": [t for t, _ in object_type_tables(_conn)],
+        }
+
+    def _coverage_for(keys):
+        return dr.build_cell_coverage(
+            keys,
+            llm_keys=llm_detected_keys,
+            kind_of=candidate_kind,
+            types_by_kind=_types_by_kind,
+            sweep_result=_sweep_result,
+            sweep_ran=_sweep_ran,
+            confirmed=_confirmed_by_type,
+            sqlite_path=sqlite_path,
+        )
 
     def _cell_state(row, col):
         if (row, col) in na_cells:
-            return ("na", None)
+            return ("na", None, None)
         keys = mapping.get((row, col))
         if keys is None:
-            return ("none", None)
+            return ("none", None, None)
+        coverage = _coverage_for(keys)
         # A cell is "pending" only if every one of its underlying detectors
-        # is LLM-based AND the sweep has not run for THAT key yet. Using a
+        # is LLM-based AND no type has been swept for THAT key yet. Using a
         # global "any sweep ran" flag would flip every LLM cell out of
-        # pending as soon as one unrelated sweep completed.
-        all_llm_pending = all(
-            key in llm_detected_keys and (sqlite_path, key) not in _sweep_ran
-            for key in keys
-        )
-        if all_llm_pending:
-            return ("pending", None)
+        # pending as soon as one unrelated sweep completed. Once a sweep
+        # exists the cell shows its count together with the coverage
+        # (partial vs complete) instead of passing as the full value.
+        all_llm = all(key in llm_detected_keys for key in keys)
+        if all_llm and coverage["state"] == "none":
+            return ("pending", None, coverage)
         total = 0
         for key in keys:
             if key in llm_detected_keys:
                 total += _llm_confirmed_by_key.get(key, 0)
             else:
                 total += results[key].height
-        return ("count", total)
+        return ("count", total, coverage)
 
     def _issue_key_for(keys):
         # A cell may map to 1 issue key or (for a merged sentinel) 2+. Store
@@ -695,7 +724,7 @@ def overview_meta(
     overview_cell_meta: dict[str, dict] = {}
     for _r_idx, _row in enumerate(rows):
         for _c_idx, _col in enumerate(cols_flat):
-            _kind, _count = _cell_state(_row, _col)
+            _kind, _count, _coverage = _cell_state(_row, _col)
             _key = f"{_r_idx}:{_c_idx}"
             if _kind in ("none", "na"):
                 overview_cell_meta[_key] = {
@@ -704,6 +733,7 @@ def overview_meta(
                     "row_label": _row,
                     "col_label": _col,
                     "issue_key": None,
+                    "coverage": None,
                 }
                 continue
             _issue_key = _issue_key_for(mapping[(_row, _col)])
@@ -713,6 +743,7 @@ def overview_meta(
                 "row_label": _row,
                 "col_label": _col,
                 "issue_key": _issue_key,
+                "coverage": _coverage,  # dict | None (None for rule-only)
             }
     return (overview_cell_meta,)
 
@@ -749,7 +780,11 @@ def overview_layout(
         selected_issue_key=get_selected_issue(),
     )
 
-    mo.vstack([_summary_header, mo.Html(_table_html)], gap=0)
+    _coverage_html = dr.coverage_summary_html(overview_cell_meta)
+
+    mo.vstack(
+        [_summary_header, mo.Html(_table_html), mo.Html(_coverage_html)], gap=0
+    )
     return
 
 
@@ -1051,15 +1086,24 @@ def drill_llm_controls(
 @app.cell
 def drill_shell_top(
     DRILL_LABELS,
+    candidate_kind,
+    connect_sqlite,
     ctx,
     detect_btn,
+    dr,
+    event_type_tables,
+    get_flags,
+    get_sweep_ran,
+    get_sweep_result,
+    llm_detected_keys,
     mo,
-    swept_types,
+    object_type_tables,
+    sqlite_path,
     type_picker,
 ):
     """Top half of the drill subsection: header + LLM controls (when in
-    LLM mode) + a "Swept so far" affordance summarising which object
-    types have already been checked. Rendered above ``drill_llm_sweep``
+    LLM mode) + a per-type coverage table showing which types have been
+    scanned and which are still open. Rendered above ``drill_llm_sweep``
     in source order so the sweep cell's progress-bar slot lands
     immediately below this cell's output — inside the subsection, not
     between the overview and the header."""
@@ -1081,15 +1125,23 @@ def drill_shell_top(
 
         if ctx["mode"] in ("llm_pending", "llm_with_flags"):
             _parts.append(mo.hstack([type_picker, detect_btn], justify="start", gap=1))
-            if swept_types:
-                _bits = ", ".join(
-                    f"`{_t}` ({_flagged}/{_total} flagged)"
-                    for _t, _total, _flagged, _summary in swept_types
-                )
-                _parts.append(mo.md(
-                    f"**Swept so far:** {_bits}. Pick another type to sweep, "
-                    f"or re-select a swept type to re-run it."
-                ))
+            _key = ctx["issue_key"]
+            _kind = candidate_kind(_key)
+            with connect_sqlite(sqlite_path) as _conn:
+                _lookup = event_type_tables if _kind == "event" else object_type_tables
+                _types = [t for t, _ in _lookup(_conn)]
+            _cov = dr.build_cell_coverage(
+                [_key],
+                llm_keys=llm_detected_keys,
+                kind_of=candidate_kind,
+                types_by_kind={_kind: _types},
+                sweep_result=get_sweep_result(),
+                sweep_ran=get_sweep_ran(),
+                confirmed=dr.confirmed_by_key_type(get_flags(), sqlite_path),
+                sqlite_path=sqlite_path,
+            )
+            if _cov and _cov["types"]:
+                _parts.append(mo.Html(dr.coverage_table_html(_cov)))
         _top = mo.vstack(_parts, gap=0.5)
     _top
     return
