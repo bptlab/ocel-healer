@@ -9,6 +9,7 @@ they do not own any reactive state themselves.
 from __future__ import annotations
 
 import hashlib
+import html as _html
 import json as _json
 from typing import Any, Callable, Iterable
 
@@ -36,19 +37,14 @@ SUMMARY_TH_STYLE = (
     "font-weight:600; vertical-align:middle; text-align:center; "
     "white-space:nowrap;"
 )
-# Vertical variant used for the 13 dimension-column headers in the overview
-# grid: labels are rotated 180° with `writing-mode:vertical-rl` so they read
-# bottom-up, which lets the column pinch down to header-font-height + a
-# little padding instead of the ~90px each horizontal label needed. Keeps
-# the paper Table 3 orientation intact without overflowing typical laptop
-# widths.
-SUMMARY_TH_VERTICAL_STYLE = (
+# Variant for the 13 dimension-column headers in the overview grid. The app
+# runs at full width, so the labels stay horizontal and wrap onto two or
+# three lines ("Event Attribute Value") instead of being rotated.
+SUMMARY_TH_COL_STYLE = (
     "background:#f6f8fa; border-right:1px solid #d0d7de; "
-    "border-bottom:1px solid #d0d7de; padding:10px 6px; "
-    "font-weight:600; vertical-align:middle; text-align:center; "
-    "white-space:nowrap; "
-    "writing-mode:vertical-rl; transform:rotate(180deg); "
-    "line-height:1.2;"
+    "border-bottom:1px solid #d0d7de; padding:8px 6px; "
+    "font-weight:600; vertical-align:bottom; text-align:center; "
+    "white-space:normal; line-height:1.25; font-size:12px;"
 )
 SUMMARY_CORNER_STYLE = (
     "background:#f6f8fa; border-right:1px solid #d0d7de; "
@@ -62,7 +58,7 @@ SUMMARY_TD_STYLE = (
 SUMMARY_TD_SELECTED_STYLE = (
     "border-right:1px solid #0969da; border-bottom:1px solid #0969da; "
     "padding:6px 8px; text-align:center; white-space:nowrap; "
-    "background:#ddf4ff;"
+    "background:#ddf4ff; box-shadow:inset 0 0 0 2px #0969da;"
 )
 SUMMARY_ROW_LABEL_STYLE = (
     "border-right:1px solid #d0d7de; border-bottom:1px solid #d0d7de; "
@@ -103,12 +99,19 @@ DETECTOR_TD_STYLE = (
 # ── Small HTML snippets used in the overview and drill-in ────────────────
 
 DASH_HTML = '<span style="color:#57606a;">—</span>'
+_PENDING_BADGE_STYLE = (
+    "display:inline-block; padding:1px 8px; border-radius:10px; "
+    "font-size:12px; font-weight:700; color:#9a6700; background:#fff8c5;"
+)
 PENDING_HTML = (
     '<span title="Detector implemented but the LLM sweep has not been '
-    'run yet for this file." style="display:inline-block; padding:1px 8px; '
-    'border-radius:10px; font-size:12px; font-weight:700; color:#9a6700; '
-    'background:#fff8c5;">?</span>'
+    f'run yet for this file." style="{_PENDING_BADGE_STYLE}">?</span>'
 )
+# The clickable counters are marimo buttons rendered inside shadow roots;
+# src/dashboard.css (loaded via App(css_file=...)) strips their chrome.
+# Same badge without the `title` — used as a button label, where the
+# button's own tooltip carries the explanation.
+PENDING_LABEL_HTML = f'<span style="{_PENDING_BADGE_STYLE}">?</span>'
 # Cell that is intentionally not applicable (distinct from a blank/dash
 # cell whose detector merely hasn't been implemented yet). Used for
 # `Missing / Obj. Attr. Type` and `Missing / Evt. Attr. Type`: a missing
@@ -139,13 +142,67 @@ def badge_html(n: int) -> str:
     return pill_html(n)
 
 
-def render_section_header_html(title: str, subtitle: str = "") -> str:
+# ── Issue Overview cell buttons ──────────────────────────────────────────
+
+def overview_cell_label(spec: dict) -> str:
+    """Label of the button that fills an interactive overview cell: the
+    count pill, or the pending badge for an LLM cell not swept yet."""
+    if spec["kind"] == "pending":
+        return PENDING_LABEL_HTML
+    return pill_html(spec["count"])
+
+
+def overview_cell_tooltip(spec: dict) -> str:
+    """Hover text of an interactive overview cell's button."""
+    where = f"{spec['row_label']} / {spec['col_label']}"
+    if spec["kind"] == "pending":
+        return f"{where}: LLM-based detector, not run yet for this log. Click to open."
+    n = spec["count"]
+    return f"{where}: {n:,} row(s) detected. Click to drill in, click again to close."
+
+
+
+# ── Small HTML builders (styles in src/dashboard.css) ─────────────────────
+
+def esc(value: Any) -> str:
+    """HTML-escape a value for safe interpolation (None → empty string)."""
+    return _html.escape("" if value is None else str(value), quote=True)
+
+
+def chip(kind: str, text: str, title: str | None = None) -> str:
+    """Small status pill. kind ∈ ok | warn | danger | neutral | accent."""
+    title_attr = f' title="{esc(title)}"' if title else ""
+    return f'<span class="dh-chip dh-chip--{kind}"{title_attr}>{esc(text)}</span>'
+
+
+def stats_strip(stats: dict[str, Any]) -> str:
+    """Row of label/value tiles (log statistics)."""
+    tiles = []
+    for key, value in stats.items():
+        shown = "—" if value is None else (f"{value:,}" if isinstance(value, int) else str(value))
+        tiles.append(
+            f'<div class="dh-stat"><span class="dh-stat-k">{esc(key)}</span>'
+            f'<span class="dh-stat-v">{esc(shown)}</span></div>'
+        )
+    return f'<div class="dh-stats">{"".join(tiles)}</div>'
+
+
+def details(summary: str, body_html: str) -> str:
+    """Collapsible block with a text summary and pre-rendered HTML body."""
+    return (
+        f'<details class="dh-details"><summary>{esc(summary)}</summary>'
+        f'<div class="dh-details-body">{body_html}</div></details>'
+    )
+
+
+def render_section_header_html(title: str, subtitle: str = "", right: str = "") -> str:
     """Standard section header used across the dashboard.
 
     Renders a bold 20px title above an optional muted 13px subtitle, with
     a thin bottom rule separating the header block from what follows.
     Callers pass raw HTML for `subtitle` (may include inline formatting);
-    pass an empty string to render the title only.
+    pass an empty string to render the title only. `right` is optional
+    HTML (e.g. a status chip) shown at the right edge, on the title line.
     """
     _subtitle_html = (
         f'<div style="margin-top:4px; color:#57606a; font-size:13px;">'
@@ -153,12 +210,19 @@ def render_section_header_html(title: str, subtitle: str = "") -> str:
         if subtitle
         else ""
     )
+    _right_html = (
+        f'<div style="flex:0 0 auto; padding-top:3px;">{right}</div>' if right else ""
+    )
     return (
         '<div style="margin:8px 0 14px 0; padding-bottom:8px; '
-        'border-bottom:1px solid #d0d7de;">'
+        'border-bottom:1px solid #d0d7de; display:flex; align-items:flex-start; '
+        'justify-content:space-between; gap:16px;">'
+        '<div style="min-width:0;">'
         f'<div style="font-size:20px; font-weight:700; color:#1f2328; '
         f'letter-spacing:-0.01em;">{title}</div>'
         f'{_subtitle_html}'
+        '</div>'
+        f'{_right_html}'
         '</div>'
     )
 
@@ -171,24 +235,27 @@ def render_overview_table_html(
     cols_flat: list[str],
     cell_meta: dict[str, dict],
     selected_issue_key: str | None,
+    cell_buttons: dict[str, str] | None = None,
 ) -> str:
-    """Render the Issue Overview as a static HTML `<table>`.
+    """Render the Issue Overview as an HTML `<table>`.
 
     Layout follows paper Table 3 (Basmer et al.): a corner cell, a
     group-header row spanning Events / Objects / Relations, a column-label
-    row, and one body row per entry in `rows`. The 13 dimension column
-    labels are rendered rotated 180° via `writing-mode:vertical-rl` (see
-    `SUMMARY_TH_VERTICAL_STYLE`) so the table fits typical laptop widths
-    without overflowing horizontally; the group headers stay horizontal
-    because their `colspan` gives them room. `cell_meta` is keyed
+    row, and one body row per entry in `rows`. `cell_meta` is keyed
     "r_idx:c_idx" and carries `{kind, count, row_label, col_label, issue_key}`
     for every cell — the same shape `overview_meta` builds in dashboard.py.
+
+    `cell_buttons` maps the same "r_idx:c_idx" keys to the rendered HTML of
+    a marimo button (``f"{button}"``) for the interactive cells; the
+    dashboard builds those in `overview_buttons` so a click selects the
+    cell's issue. Cells without an entry fall back to the static pill /
+    badge, which keeps this renderer usable without widgets.
 
     - `kind == "none"` → renders `DASH_HTML`.
     - `kind == "na"` → renders `NA_HTML` (intentionally not applicable,
       distinct from `none` which merely means "no detector mapped yet").
-    - `kind == "pending"` → renders `PENDING_HTML`.
-    - `kind == "count"` → renders `pill_html(count)`.
+    - `kind == "pending"` → renders the button, else `PENDING_HTML`.
+    - `kind == "count"` → renders the button, else `pill_html(count)`.
 
     The cell whose `issue_key` equals `selected_issue_key` is styled with
     `SUMMARY_TD_SELECTED_STYLE` instead of `SUMMARY_TD_STYLE` so the user
@@ -210,12 +277,12 @@ def render_overview_table_html(
         )
     _group_row = "<tr>" + "".join(_group_cells) + "</tr>"
 
-    # Column-label row: one vertically-rotated <th> per data column. The
-    # group row's rowspan=2 corner cell already covers the row-label
-    # column's slot in this row, so no leading corner cell here.
+    # Column-label row: one <th> per data column. The group row's rowspan=2
+    # corner cell already covers the row-label column's slot in this row,
+    # so no leading corner cell here.
     _col_cells = []
     for _c in cols_flat:
-        _col_cells.append(f'<th style="{SUMMARY_TH_VERTICAL_STYLE}">{_c}</th>')
+        _col_cells.append(f'<th style="{SUMMARY_TH_COL_STYLE}">{_c}</th>')
     _col_row = "<tr>" + "".join(_col_cells) + "</tr>"
 
     # Body rows.
@@ -225,7 +292,8 @@ def render_overview_table_html(
             f'<th style="{SUMMARY_ROW_LABEL_STYLE}">{_row_label}</th>'
         ]
         for _c_idx, _col in enumerate(cols_flat):
-            _spec = cell_meta[f"{_r_idx}:{_c_idx}"]
+            _key = f"{_r_idx}:{_c_idx}"
+            _spec = cell_meta[_key]
             _kind = _spec["kind"]
             _is_selected = (
                 _spec["issue_key"] is not None
@@ -238,6 +306,8 @@ def render_overview_table_html(
                 _content = DASH_HTML
             elif _kind == "na":
                 _content = NA_HTML
+            elif cell_buttons is not None and _key in cell_buttons:
+                _content = f'<div class="ov-btn">{cell_buttons[_key]}</div>'
             elif _kind == "pending":
                 _content = PENDING_HTML
             else:
@@ -246,10 +316,12 @@ def render_overview_table_html(
         _body_rows.append("<tr>" + "".join(_row_cells) + "</tr>")
 
     return (
+        '<div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">'
         f'<table style="{SUMMARY_TABLE_STYLE}">'
         f"<thead>{_group_row}{_col_row}</thead>"
         f"<tbody>{''.join(_body_rows)}</tbody>"
         f"</table>"
+        "</div>"
     )
 
 
