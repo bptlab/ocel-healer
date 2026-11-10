@@ -345,13 +345,14 @@ def exploration_run(DATA_DIR, explore_btn, explore_database, file_picker, load_g
             with mo.status.spinner(title="Exploring the log…") as _spinner:
                 def _tick(name, i, total, _s=_spinner):
                     _s.update(subtitle=f"{name} — step {i}/{total}")
+                # Artifacts go next to the log (<db_dir>/exploration/<stem>/),
+                # the same place the repair tasks look their hints up.
                 explore_database(
                     _db,
                     model=_model,
-                    base_dir=DATA_DIR / "exploration",
                     on_progress=_tick,
                 )
-            _warnings = (load_guide(_db, DATA_DIR / "exploration") or {}).get("warnings", [])
+            _warnings = (load_guide(_db) or {}).get("warnings", [])
             if _warnings:
                 exploration_result = mo.md(
                     f"⚠️ Exploration finished with {len(_warnings)} warning(s) — "
@@ -368,10 +369,9 @@ def exploration_run(DATA_DIR, explore_btn, explore_database, file_picker, load_g
 def exploration_view(
     DATA_DIR, dr, exploration_result, explore_btn, file_picker, guide_is_stale, load_report, mo
 ):
-    _base = DATA_DIR / "exploration"
     _db = str(DATA_DIR / file_picker.value) if file_picker.value else None
-    _report = load_report(_db, _base) if _db else ""
-    _stale = guide_is_stale(_db, _base) if _db else True
+    _report = load_report(_db) if _db else ""
+    _stale = guide_is_stale(_db) if _db else True
 
     if not _report:
         _status = mo.md(
