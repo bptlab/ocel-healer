@@ -4,7 +4,7 @@
 
 A `CancelToken` is installed for the duration of a background job with
 `use_token(token)`. Every LLM request made inside that block registers its
-HTTP connection with the token (see `src.llm.client._post_chat`), so
+HTTP connection with the token (see `src.llm.client._request`), so
 `token.cancel()` takes effect immediately:
 
 * a request in flight is aborted by shutting down its socket — Ollama notices

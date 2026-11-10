@@ -24,6 +24,14 @@ REPLY = {"choices": [{"message": {"content": '{"ok": true}'}}]}
 
 
 class _FakeOllama(BaseHTTPRequestHandler):
+    def do_GET(self):  # noqa: N802 — /api/tags health check
+        self.server.hits += 1
+        body = json.dumps({"models": [{"name": "fake:latest"}]}).encode()
+        self.send_response(self.server.status)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_POST(self):  # noqa: N802 — http.server API
         self.server.hits += 1
         self.rfile.read(int(self.headers.get("Content-Length", 0)))
@@ -69,6 +77,14 @@ def test_without_token_behaviour_is_unchanged(fake_llm):
     with pytest.raises(urllib.error.HTTPError) as e:
         _chat()
     assert e.value.code == 500
+
+
+def test_health_check_uses_the_same_client(fake_llm, monkeypatch):
+    assert client.llm_ready() == (True, ["fake:latest"])
+    fake_llm.status = 503
+    assert client.llm_ready() == (False, [])
+    monkeypatch.setattr(client, "LLM_HOST", "http://127.0.0.1:9")  # nothing listens
+    assert client.llm_ready() == (False, [])
 
 
 def test_abort_ends_request_in_flight_immediately(fake_llm):

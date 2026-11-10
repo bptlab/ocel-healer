@@ -2,32 +2,25 @@
 
 Detection and LLM-assisted repair of data-quality issues in object-centric event logs
 
-OCEL-Healer combines two layers:
+OCEL-Healer combines four steps:
 
-1. **Rule-based detection** finds data-quality issues (missing values, duplicates, dangling relations, wrong types, …) deterministically. No LLM is needed for this.
-2. **LLM-based repair** asks a local LLM to propose a fix for each detected issue. An **exploration agent** first profiles the log and gives the repair agents log-specific hints (id patterns, value vocabularies, null rates, …).
+1. **Rule-based detection** finds data-quality issues deterministically (missing values, duplicates, dangling relations, wrong attribute types, …). No LLM is needed for this.
+2. **Exploration** profiles the log once (id patterns, value vocabularies, null rates, …) and lets the LLM turn the profile into a short guide. Both are used in the next two steps as hints specific to that log.
+3. **LLM-based detection** covers issues that need domain judgement: an object or event assigned to the wrong type, an implausible timestamp or attribute value, an attribute a type should have but does not. An LLM served by [Ollama](https://ollama.com) judges the candidate rows of a chosen type and flags suspects; the user confirms or dismisses each flag before it counts as detected.
+4. **LLM-based repair** asks the LLM to propose a fix for each detected issue, whether it came from the rules or from the LLM. Proposals are shown with their confidence before anything is written.
 
-Everything runs locally. The LLM is served by [Ollama](https://ollama.com) on your own machine, and no data leaves it.
+You can connect any model served by [Ollama](https://ollama.com), on this machine or on a server you choose (see [Setting up the LLM](#setting-up-the-llm-ollama)).
 
 ## Contents
 
-- [Requirements](#requirements)
 - [Installation](#installation)
 - [Quick start: the dashboard](#quick-start-the-dashboard)
 - [Setting up the LLM (Ollama)](#setting-up-the-llm-ollama)
 - [Pipeline components](#pipeline-components)
 - [Data](#data)
 - [Repository structure](#repository-structure)
+- [Requirements](#requirements)
 - [Troubleshooting](#troubleshooting)
-
-## Requirements
-
-| What | Needed for | Notes |
-| --- | --- | --- |
-| Python ≥ 3.11 | everything | Developed and tested on macOS with Python 3.14. |
-| [Git LFS](https://git-lfs.com) | the datasets | Without it, `data/**/*.sqlite` are small pointer files, not databases. |
-| ~3.5 GB disk | all datasets | Synthetic logs only: ~35 MB (see below). |
-| [Ollama](https://ollama.com) + one model | LLM repair, exploration, evaluation | Optional: detection works without it. An 8B model needs ~5 GB disk and ~8 GB RAM. |
 
 ## Installation
 
@@ -89,8 +82,8 @@ The dashboard opens in your browser (use `marimo edit src/dashboard.py` to also 
 - **Pick a log** from the *OCEL File* dropdown. It lists every `*.sqlite` under `data/` and preselects `data/synthetic/order-management-corrupted.sqlite`, a log with known, injected issues.
 - **Rule-based detection** runs immediately, with or without an LLM.
 - **Click a cell in the Issue Overview** to drill into that issue; click it again to close the drill-in.
-- **LLM features** (exploration, repair suggestions) become available once Ollama is running and at least one model is pulled (next section). Pick the model in the *Model* dropdown.
-- **Long LLM tasks can be stopped.** While exploration, an LLM detection run or *Ask domain expert* is running, a progress line with an **Abort** button is shown. Aborting stops at once, including the request the model is working on. An aborted detection run keeps the verdicts it already has; an aborted exploration keeps the previous report. Only one LLM task runs at a time.
+- **LLM features** (exploration, LLM-based detection, repair suggestions) become available once Ollama is running and at least one model is pulled (next section). Pick the model in the *Model* dropdown. Overview cells that need the LLM show a yellow **?** badge until you click them, pick a type and click *Run detection*; flags you confirm are then counted in the Overview.
+- **Long LLM steps can be stopped.** While exploration, an LLM detection run or *Ask domain expert* is running, a progress line with an **⏹ Abort** button is shown. Aborting stops at once, including the request the model is working on. An aborted detection run keeps the verdicts it already has; an aborted exploration keeps the previous report. Only one LLM step runs at a time.
 
 > **Applying a repair modifies the selected `.sqlite` file in place.** To restore a bundled log, run `git checkout -- data/<path>.sqlite`. To keep the originals untouched, copy a log into `data/` under a new name and work on the copy.
 
@@ -163,9 +156,9 @@ corrupt_database(DEFAULT_CLEAN_PATH, level="all")   # levels: legacy, easy, medi
 
 With `level="all"` this regenerates `data/synthetic/order-management-corrupted.sqlite`.
 
-### Exploration agent
+### Exploration
 
-Before repairing a log, the exploration agent analyses it and produces knowledge that the repair agents receive as `exploration_hints`. It consists of a deterministic profile (schemas, null rates, id templates, value vocabularies, qualifier anomalies) and an LLM-written interpretation guide.
+Before the LLM steps run on a log, the exploration step analyses it and produces knowledge that LLM detection and LLM repair receive as `exploration_hints`. It consists of a deterministic profile (schemas, null rates, id templates, value vocabularies, qualifier anomalies) and an LLM-written interpretation guide.
 
 Run it from the dashboard (pick a log and a model, press **🔎 Run exploration**) or from the command line:
 
@@ -179,7 +172,7 @@ The artifacts are written **next to the log**, in `<log folder>/exploration/<log
 - `exploration_profile.json`: deterministic facts, the source of truth for hints
 - `exploration_guide.json`: LLM interpretations (optional layer)
 
-The dashboard, the CLI and the repair agents all use this location, so a report created by any of them is picked up by the others. Repair also works without a report, just without log-specific hints. If the log's structure changes (tables, types, qualifiers), the report is marked stale and should be regenerated.
+The dashboard, the CLI and the LLM detection and repair steps all use this location, so a report created by any of them is picked up by the others. Repair also works without a report, just without log-specific hints. If the log's structure changes (tables, types, qualifiers), the report is marked stale and should be regenerated.
 
 ### Evaluating the exploration hints
 
@@ -215,7 +208,7 @@ All logs are OCEL 2.0 SQLite files, stored with Git LFS.
 ```
 src/
   detection/                   rule-based detectors (detect_all)
-  exploration/                 exploration agent: profiling + LLM guide → repair hints
+  exploration/                 exploration: profiling + LLM guide → hints
   llm/                         LLM client, per-issue repair tasks, repair application
   order_management_corruption/ issue injectors used to build the synthetic log
   evaluation/                  hint evaluation (evaluate_hints, summarize_runs)
@@ -225,8 +218,17 @@ src/
 data/
   synthetic/  real-world/      OCEL 2.0 logs (Git LFS)
 evaluation_results/            pre-computed evaluation results
-tests/                         pytest suite
+tests/                         pytest tests
 ```
+
+## Requirements
+
+| What | Needed for | Notes |
+| --- | --- | --- |
+| Python ≥ 3.11 | everything | Developed and tested on macOS with Python 3.14. |
+| [Git LFS](https://git-lfs.com) | the datasets | Without it, `data/**/*.sqlite` are small pointer files, not databases. |
+| ~3.5 GB disk | all datasets | Synthetic logs only: ~35 MB (see [Installation](#installation)). |
+| [Ollama](https://ollama.com) + one model | LLM detection, repair, exploration, evaluation | Optional: rule-based detection works without it. An 8B model needs ~5 GB disk and ~8 GB RAM. |
 
 ## Troubleshooting
 
