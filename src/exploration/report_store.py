@@ -68,21 +68,39 @@ def load_report(db_path: str | Path, base_dir: str | Path | None = None) -> str:
     return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
+_fingerprint_cache: dict[str, tuple[tuple[int, int], str]] = {}
+
+
+def current_fingerprint(db_path: str | Path) -> str:
+    """`schema_fingerprint` of the log, recomputed only when the file changed
+    (mtime or size). The dashboard asks on every refresh, and the scan takes
+    up to a second on the large real-world logs."""
+    from src.exploration.db_profiler import connect_readonly, schema_fingerprint
+
+    p = Path(db_path)
+    st = p.stat()
+    stamp = (st.st_mtime_ns, st.st_size)
+    cached = _fingerprint_cache.get(str(p))
+    if cached is not None and cached[0] == stamp:
+        return cached[1]
+    conn = connect_readonly(p)
+    try:
+        fingerprint = schema_fingerprint(conn)
+    finally:
+        conn.close()
+    _fingerprint_cache[str(p)] = (stamp, fingerprint)
+    return fingerprint
+
+
 def guide_is_stale(db_path: str | Path, base_dir: str | Path | None = None) -> bool:
     """True when there is no guide or the log's *structure* changed since it
     was built (tables, object types, qualifiers). Value-level repairs do not
     invalidate the guide — its knowledge is about semantics, not values."""
-    from src.exploration.db_profiler import connect_readonly, schema_fingerprint
-
     guide = load_guide(db_path, base_dir)
     if guide is None:
         return True
     try:
-        conn = connect_readonly(db_path)
-        try:
-            current = schema_fingerprint(conn)
-        finally:
-            conn.close()
+        current = current_fingerprint(db_path)
     except Exception:  # noqa: BLE001 — unreadable db == can't trust the guide
         return True
     return current != guide.get("source_fingerprint")
