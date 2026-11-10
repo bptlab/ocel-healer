@@ -4,11 +4,11 @@
 
 Usage:
     python -m src.exploration data/synthetic/order-management-corrupted.sqlite
-    python -m src.exploration data/foo.sqlite --model qwen3:8b
+    python -m src.exploration path/to/log.sqlite --model qwen3:8b
 
 Writes exploration_profile.json, exploration_guide.json and
-exploration_report.md into <base-dir>/<db-stem>/ (default: data/exploration/,
-which is where the repair agents look hints up).
+exploration_report.md into <db_dir>/exploration/<db_stem>/ — next to the log,
+which is where the dashboard and the repair agents look hints up.
 """
 
 import argparse
@@ -30,7 +30,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    base_dir = Path(args.base_dir) if args.base_dir else Path(args.db_path).parent / "exploration"
+    base_dir = Path(args.base_dir) if args.base_dir else None  # None → next to the db
 
     t0 = time.time()
 
