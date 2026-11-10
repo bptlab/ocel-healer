@@ -3,7 +3,6 @@ import json
 import os
 import urllib.error
 import urllib.parse
-import urllib.request
 from contextlib import nullcontext
 from typing import Any
 
@@ -42,9 +41,8 @@ def set_active_model(name: str) -> None:
 def llm_ready() -> tuple[bool, list[str]]:
     """Return (reachable, available_models). Never raises."""
     try:
-        with urllib.request.urlopen(f"{LLM_HOST}/api/tags", timeout=2.0) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+        data = json.loads(_request("GET", "/api/tags", timeout=2.0).decode("utf-8"))
+    except (urllib.error.HTTPError, http.client.HTTPException, json.JSONDecodeError, OSError):
         return False, []
     return True, [m.get("name", "") for m in data.get("models", []) if m.get("name")]
 
@@ -71,11 +69,23 @@ def _post_chat(
 
 
 def _post_json(path: str, body: bytes, timeout: float) -> bytes:
-    """POST `body` to LLM_HOST + path and return the raw response body.
+    """POST a JSON `body` to LLM_HOST + path and return the raw response body."""
+    return _request("POST", path, timeout=timeout, body=body,
+                    headers={"Content-Type": "application/json"})
+
+
+def _request(method: str, path: str, *, timeout: float, body: bytes | None = None,
+             headers: dict[str, str] | None = None) -> bytes:
+    """The one way to reach Ollama: send `method path` to LLM_HOST and return
+    the raw response body. Raises `urllib.error.HTTPError` on a 4xx/5xx
+    status and the usual `OSError`/`http.client.HTTPException` on transport
+    failures.
 
     Uses http.client (not urllib) so the connection can be registered with
     the current job's CancelToken: an abort shuts the socket down and this
     call raises `Cancelled` immediately instead of waiting for the timeout.
+    Outside a job (health check, CLI, tests) no token is installed and the
+    call behaves like a plain request.
     """
     url = urllib.parse.urlsplit(LLM_HOST)
     conn_cls = http.client.HTTPSConnection if url.scheme == "https" else http.client.HTTPConnection
@@ -86,10 +96,7 @@ def _post_json(path: str, body: bytes, timeout: float) -> bytes:
             conn.connect()
             if token is not None:
                 token.raise_if_cancelled()  # aborted while connecting
-            conn.request(
-                "POST", url.path.rstrip("/") + path, body=body,
-                headers={"Content-Type": "application/json"},
-            )
+            conn.request(method, url.path.rstrip("/") + path, body=body, headers=headers or {})
             resp = conn.getresponse()
             data = resp.read()
     except (OSError, http.client.HTTPException) as e:
