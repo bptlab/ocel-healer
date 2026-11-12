@@ -1,9 +1,9 @@
-# src/exploration/db_profiler.py
+# src/examination/db_profiler.py
 
 """Deterministic profiling of an OCEL 2.0 SQLite database.
 
 Gathers verifiable facts — schemas, counts, value samples, null rates, ID
-patterns, qualifier/type mappings — for the exploration agent to interpret.
+patterns, qualifier/type mappings — for the examination agent to interpret.
 No LLM involved here: everything in the profile is ground truth, so the
 agent's claims can later be validated against it.
 
@@ -261,7 +261,7 @@ def qualifier_outliers(
     """Qualifiers whose links overwhelmingly point to one object type, plus the
     minority objects that break the pattern. Those objects either carry a wrong
     ocel_type (corruption) or the qualifier is legitimately polysemous — the
-    exploration guide records the fact; judging it is the detectors' job."""
+    examination guide records the fact; judging it is the detectors' job."""
     out: dict[str, Any] = {}
     for qualifier, per_type in e2o_qualifier_object_types.items():
         total = sum(per_type.values())

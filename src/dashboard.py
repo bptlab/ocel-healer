@@ -24,7 +24,7 @@ def imports():
         suggest_repair,
         set_active_model,
     )
-    from src.exploration import explore_database, guide_is_stale, load_guide, load_report
+    from src.examination import examine_database, guide_is_stale, load_guide, load_report
     from src import dashboard_render as dr
 
     # Resolve the project root once so the dashboard works from any cwd.
@@ -42,7 +42,7 @@ def imports():
         detect_all_with_llm,
         dr,
         event_type_tables,
-        explore_database,
+        examine_database,
         guide_is_stale,
         load_guide,
         load_report,
@@ -169,7 +169,7 @@ def llm_model_apply(model_picker, reachable, set_active_model):
 def llm_job_state(mo):
     # Snapshot of the current/last job — reactive, drives the UI.
     #   {id, kind, label, context, status, progress, result, error}
-    #   kind:   "explore" | "sweep" | "ask"
+    #   kind:   "examine" | "sweep" | "ask"
     #   status: "running" | "done" | "cancelled" | "failed"
     get_llm_job, set_llm_job = mo.state(None)
     # Non-reactive holder: the live job dict, its CancelToken, and the ids of
@@ -427,41 +427,41 @@ def log_summary(connect_sqlite, dr, mo, sqlite_path):
 
 
 @app.cell
-def exploration_button(llm_enabled, mo):
-    explore_btn = mo.ui.run_button(
-        label="Run exploration", kind="success", disabled=not llm_enabled
+def examination_button(llm_enabled, mo):
+    examine_btn = mo.ui.run_button(
+        label="Run examination", kind="success", disabled=not llm_enabled
     )
-    return (explore_btn,)
+    return (examine_btn,)
 
 
 @app.cell
-def exploration_run(
-    DATA_DIR, busy_notice, explore_btn, explore_database, file_picker, model_picker, start_llm_job
+def examination_run(
+    DATA_DIR, busy_notice, examine_btn, examine_database, file_picker, model_picker, start_llm_job
 ):
-    exploration_notice = None
-    if explore_btn.value and file_picker.value:
+    examination_notice = None
+    if examine_btn.value and file_picker.value:
         _db = str(DATA_DIR / file_picker.value)
         _model = model_picker.value if model_picker is not None else None
 
         def _work(progress):
-            return explore_database(
+            return examine_database(
                 _db,
                 model=_model,
                 on_progress=lambda name, i, total: progress(i, total, name),
             )
 
-        if not start_llm_job("explore", "Exploring the log", _work, context={"db": _db}):
-            exploration_notice = busy_notice()
-    return (exploration_notice,)
+        if not start_llm_job("examine", "Examining the log", _work, context={"db": _db}):
+            examination_notice = busy_notice()
+    return (examination_notice,)
 
 
 @app.cell
-def exploration_view(
+def examination_view(
     DATA_DIR,
     abort_btn,
     dr,
-    exploration_notice,
-    explore_btn,
+    examination_notice,
+    examine_btn,
     file_picker,
     get_llm_job,
     guide_is_stale,
@@ -471,35 +471,35 @@ def exploration_view(
 ):
     _db = str(DATA_DIR / file_picker.value) if file_picker.value else None
 
-    # Outcome of the exploration job for this log (if one ran this session).
+    # Outcome of the examination job for this log (if one ran this session).
     _job = get_llm_job()
     _running = _job is not None and _job["status"] == "running"
-    _mine = _job is not None and _job["kind"] == "explore" and _job["context"].get("db") == _db
-    # The "another task is running" notice from `exploration_run` is only
+    _mine = _job is not None and _job["kind"] == "examine" and _job["context"].get("db") == _db
+    # The "another task is running" notice from `examination_run` is only
     # true while that other job runs — a run_button resets to False without
     # re-running its cell, so the notice would otherwise linger.
-    _notice = exploration_notice if _running and not _mine else None
-    exploration_result = None
+    _notice = examination_notice if _running and not _mine else None
+    examination_result = None
     if _mine:
         if _job["status"] == "running":
-            exploration_result = dr.render_llm_job_running(mo, _job, abort_btn)
+            examination_result = dr.render_llm_job_running(mo, _job, abort_btn)
         elif _job["status"] == "cancelled":
-            exploration_result = mo.md(
-                "⏹ Exploration aborted — the previous report (if any) was kept."
+            examination_result = mo.md(
+                "⏹ Examination aborted — the previous report (if any) was kept."
             ).callout(kind="warn")
         elif _job["status"] == "failed":
-            exploration_result = mo.md(
-                f"❌ Exploration failed: `{_job['error']}`"
+            examination_result = mo.md(
+                f"❌ Examination failed: `{_job['error']}`"
             ).callout(kind="danger")
         else:
             _warnings = (load_guide(_db) or {}).get("warnings", [])
-            exploration_result = (
+            examination_result = (
                 mo.md(
-                    f"⚠️ Exploration finished with {len(_warnings)} warning(s) — "
+                    f"⚠️ Examination finished with {len(_warnings)} warning(s) — "
                     f"some sections may be empty. Last: `{_warnings[-1]}`"
                 ).callout(kind="warn")
                 if _warnings
-                else mo.md("✅ Exploration finished.").callout(kind="success")
+                else mo.md("✅ Examination finished.").callout(kind="success")
             )
 
     # Status chip + collapsible report.
@@ -508,24 +508,24 @@ def exploration_view(
     if not _report:
         _chip = dr.chip(
             "neutral", "No report yet",
-            title="Run exploration once to give the repair agents log-specific context.",
+            title="Run examination once to give the repair agents log-specific context.",
         )
         _report_view = mo.Html("")
     elif _stale:
         _chip = dr.chip(
             "warn", "Report outdated",
-            title="The log's structure changed since this report was built. Re-run exploration.",
+            title="The log's structure changed since this report was built. Re-run examination.",
         )
-        _report_view = mo.Html(dr.details("Show Exploration Report", mo.md(_report).text))
+        _report_view = mo.Html(dr.details("Show Examination Report", mo.md(_report).text))
     else:
         _chip = dr.chip(
             "ok", "Report up to date",
             title="Repair agents receive hints from this report.",
         )
-        _report_view = mo.Html(dr.details("Show Exploration Report", mo.md(_report).text))
+        _report_view = mo.Html(dr.details("Show Examination Report", mo.md(_report).text))
 
     _section_header = mo.Html(dr.render_section_header_html(
-        "Exploration",
+        "Examination",
         "Run once per file so the repair agents have log-specific hints "
         "(id semantics, attribute patterns).",
         right=_chip,
@@ -534,9 +534,9 @@ def exploration_view(
     mo.vstack(
         [
             _section_header,
-            mo.hstack([explore_btn], justify="start"),
+            mo.hstack([examine_btn], justify="start"),
             _notice or mo.md(""),
-            exploration_result or mo.md(""),
+            examination_result or mo.md(""),
             _report_view,
         ],
         gap=0.5,

@@ -1,8 +1,8 @@
-"""Staleness check of the exploration guide (src.exploration.report_store)."""
+"""Staleness check of the examination guide (src.examination.report_store)."""
 
 import sqlite3
 
-from src.exploration import report_store
+from src.examination import report_store
 
 
 def _make_log(path):
@@ -21,7 +21,7 @@ def test_fingerprint_is_cached_until_the_file_changes(tmp_path, monkeypatch):
     db = tmp_path / "log.sqlite"
     _make_log(db)
     calls = []
-    from src.exploration import db_profiler
+    from src.examination import db_profiler
 
     real = db_profiler.schema_fingerprint
     monkeypatch.setattr(

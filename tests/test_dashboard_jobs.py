@@ -41,6 +41,6 @@ def test_every_job_kind_has_a_view():
         node.value
         for c in renderers
         for node in ast.walk(c)
-        if isinstance(node, ast.Constant) and node.value in ("explore", "sweep", "ask")
+        if isinstance(node, ast.Constant) and node.value in ("examine", "sweep", "ask")
     }
-    assert rendered_kinds == {"explore", "sweep", "ask"}
+    assert rendered_kinds == {"examine", "sweep", "ask"}

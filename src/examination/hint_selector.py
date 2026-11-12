@@ -1,12 +1,12 @@
-# src/exploration/hint_selector.py
+# src/examination/hint_selector.py
 
-"""Select the exploration slice relevant to one violation row.
+"""Select the examination slice relevant to one violation row.
 
 Hints merge two layers with different trust levels:
-  - deterministic FACTS from exploration_profile.json — id templates, value
-    vocabularies, null rates. Available after any exploration run, even when
+  - deterministic FACTS from examination_profile.json — id templates, value
+    vocabularies, null rates. Available after any examination run, even when
     every LLM section failed;
-  - LLM INTERPRETATIONS from exploration_guide.json — what a type represents,
+  - LLM INTERPRETATIONS from examination_guide.json — what a type represents,
     attribute semantics, repair hints. Optional: `guide=None` degrades to
     facts-only hints.
 
