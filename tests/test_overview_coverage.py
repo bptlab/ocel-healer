@@ -116,7 +116,7 @@ def test_partial_cell_renders_sublabel_and_popover():
     html = _table(cov)
     assert "1/3 types" in html
     assert "dashed" in html  # partial pill style
-    assert "1 of 3 event types · 5 proposed · 0 confirmed" in html
+    assert "1 of 3 event types · 5 proposed · 0 accepted" in html
     assert "○ Ship" not in html and "✓ Order" not in html
     assert "lower bound" not in html
 
@@ -156,15 +156,16 @@ def test_drill_lists_split_scanned_and_not_scanned():
     cov = _coverage([key], result, {(PATH, key)}, flags)
     cov["types"][1]["name"] = "<i>Ship</i>"
     html = dr.coverage_table_html(cov)
-    assert "Coverage: 1 of 3 event types" in html
+    assert "Coverage:" not in html
     assert "Scanned (1)" in html and "Not scanned (2)" in html
-    assert "Pay (4 / 1)" in html
+    assert "Pay (4 proposed · 1 accepted)" in html
+    assert "(proposed / confirmed)" not in html
     assert html.index("Scanned (1)") < html.index("Pay") < html.index("Not scanned (2)")
     assert "&lt;i&gt;Ship" in html and "<i>" not in html
     assert "<table" not in html
 
 
-def test_drill_lists_omit_empty_areas_and_fill_width():
+def test_drill_lists_keep_both_columns_when_one_is_empty_and_fill_width():
     types = [
         {"name": f"T{i}", "kind": "event", "key": "k", "scanned": False,
          "proposed": 0, "confirmed": 0}
@@ -172,8 +173,10 @@ def test_drill_lists_omit_empty_areas_and_fill_width():
     ]
     cov = {"state": "none", "scanned": 0, "total": 6, "noun": "event", "types": types}
     html = dr.coverage_table_html(cov)
-    assert "Scanned (" not in html and "Not scanned (6)" in html
-    assert "width:100%" in html and "repeat(auto-fill, minmax(6ch, 1fr))" in html
+    assert "Scanned (0)" in html and "Not scanned (6)" in html
+    assert "width:100%" in html and "repeat(auto-fill, minmax(3ch, 1fr))" in html
+    assert "repeat(2, minmax(0, 1fr))" in html  # always two columns
+    assert html.index("Scanned (0)") < html.index("Not scanned (6)")
     # column width follows the longest item
     types[0]["name"] = "A very long type name"
-    assert "minmax(25ch, 1fr)" in dr.coverage_table_html(cov)
+    assert "minmax(19ch, 1fr)" in dr.coverage_table_html(cov)

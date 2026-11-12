@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import html as _html
 import json as _json
+import math
 from typing import Any, Callable, Iterable
 
 
@@ -274,7 +275,7 @@ def coverage_pill_html(n: int, cov: dict) -> str:
 
 
 def coverage_popover_html(cov: dict) -> str:
-    """Hover card: one line with scan coverage and the proposed / confirmed
+    """Hover card: one line with scan coverage and the proposed / accepted
     totals over the scanned types. The per-type breakdown lives in
     :func:`coverage_table_html` (drill panel)."""
     _noun = _html.escape(cov["noun"])
@@ -285,7 +286,7 @@ def coverage_popover_html(cov: dict) -> str:
         _conf = sum(t["confirmed"] for t in cov["types"] if t["scanned"])
         _text = (
             f'{cov["scanned"]} of {cov["total"]} {_noun} types · '
-            f'{_prop} proposed · {_conf} confirmed'
+            f'{_prop} proposed · {_conf} accepted'
         )
     return f'<div class="oh-pop">{_text}</div>'
 
@@ -304,52 +305,56 @@ def na_popover_text(row_label: str) -> str:
 
 
 def coverage_table_html(cov: dict) -> str:
-    """Compact coverage block for the drill panel: a green "Scanned" list
-    (with proposed / confirmed in brackets) and a grey "Not scanned" list,
-    each laid out as an aligned grid that fills the page width."""
+    """Compact coverage block for the drill panel: a black "Scanned" list
+    (with proposed / accepted in brackets) and a grey "Not scanned" list,
+    side by side, each laid out as an aligned grid that fills its column."""
     _esc = _html.escape
 
     def _grid(items: list[str], colour: str) -> str:
         # Fill the full width: as many equal columns as fit, each at least
-        # as wide as the longest item (plus a gap), so long names get fewer
-        # columns instead of being cut off.
-        width = max(len(_html.unescape(i)) for i in items) + 4
+        # as wide as the longest item (plus a small gap), so long names get
+        # fewer columns instead of being cut off.
+        # `ch` is the width of "0", wider than the average letter, so scale
+        # the character count down to avoid reserving more than the text needs.
+        width = math.ceil(0.85 * max(len(_html.unescape(i)) for i in items)) + 1
         cells = "".join(f"<span>{i}</span>" for i in items)
         return (
-            f'<div style="display:grid; width:100%; gap:3px 16px; '
+            f'<div style="display:grid; width:100%; gap:3px 10px; '
             f'grid-template-columns:repeat(auto-fill, minmax({width}ch, 1fr)); '
             f'color:{colour};">{cells}</div>'
         )
 
-    _head = "margin:8px 0 2px 0; font-weight:600;"
+    _head = "margin:0 0 2px 0; font-weight:600;"
     _scanned = [
-        f'{_esc(t["name"])} ({t["proposed"]} / {t["confirmed"]})'
+        f'{_esc(t["name"])} ({t["proposed"]} proposed · {t["confirmed"]} accepted)'
         for t in cov["types"] if t["scanned"]
     ]
     _open = [_esc(t["name"]) for t in cov["types"] if not t["scanned"]]
-    _parts = [
-        f'<div style="font-weight:600;">Coverage: {cov["scanned"]} of '
-        f'{cov["total"]} {_esc(cov["noun"])} types</div>'
-    ]
-    if _scanned:
-        _parts.append(
-            f'<div style="{_head} color:#1a7f37;">Scanned ({len(_scanned)}) '
-            f'<span style="font-weight:400; color:#57606a;">'
-            f'(proposed / confirmed)</span></div>'
-            + _grid(_scanned, "#1a7f37")
+    def _area(title: str, items: list[str], colour: str) -> str:
+        inner = _grid(items, colour) if items else (
+            f'<div style="color:{colour};">–</div>'
         )
-    if _open:
-        _parts.append(
-            f'<div style="{_head} color:#8c959f;">Not scanned ({len(_open)})</div>'
-            + _grid(_open, "#8c959f")
+        return (
+            f'<div style="min-width:0;"><div style="{_head} color:{colour};">'
+            f'{title} ({len(items)})</div>{inner}</div>'
         )
-    _parts.append(
+
+    # Always two columns, even when one side is empty.
+    _body = (
+        '<div style="display:grid; gap:8px 32px; '
+        'grid-template-columns:repeat(2, minmax(0, 1fr));">'
+        + _area("Scanned", _scanned, "#1f2328")
+        + _area("Not scanned", _open, "#8c959f")
+        + '</div>'
+    )
+    _hint = (
         '<div style="margin-top:8px; color:#57606a;">Pick another type to '
         'sweep, or re-select a scanned type to re-run it.</div>'
     )
-    return (
+    return details(
+        f'Coverage · {cov["scanned"]} of {cov["total"]} {cov["noun"]} types scanned',
         '<div style="font-family:system-ui,-apple-system,sans-serif; '
-        f'font-size:13px;">{"".join(_parts)}</div>'
+        f'font-size:13px;">{_body}{_hint}</div>',
     )
 
 
