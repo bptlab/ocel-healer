@@ -162,6 +162,23 @@ def overview_cell_tooltip(spec: dict) -> str:
 
 
 
+def overview_legend_html() -> str:
+    """Legend under the Issue Overview. Built from the same badge helpers as
+    the table cells, so the two cannot drift apart. The dash (`DASH_HTML`,
+    a cell without a detector) is left out: every cell is mapped today."""
+    items = [
+        (pill_html(12), "issues found"),
+        (pill_html(0), "no issues found"),
+        (PENDING_LABEL_HTML, "LLM-based check, not run yet for this log"),
+        (NA_HTML.replace(' title="Not applicable — a missing value has no declared datatype."', ""),
+         "not applicable"),
+    ]
+    return '<div class="dh-legend">' + "".join(
+        f'<span class="dh-legend-item">{badge}<span>{esc(text)}</span></span>'
+        for badge, text in items
+    ) + "</div>"
+
+
 # ── Small HTML builders (styles in src/dashboard.css) ─────────────────────
 
 def esc(value: Any) -> str:

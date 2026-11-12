@@ -935,7 +935,10 @@ def overview_layout(
         cell_buttons=_cell_html,
     )
 
-    mo.vstack([_summary_header, mo.Html(_table_html)], gap=0)
+    mo.vstack(
+        [_summary_header, mo.Html(_table_html), mo.Html(dr.overview_legend_html())],
+        gap=0,
+    )
     return
 
 
