@@ -1,11 +1,10 @@
 import marimo
 
-app = marimo.App(width="medium")
+app = marimo.App(width="full", css_file="dashboard.css")
 
 
 @app.cell
 def imports():
-    import os
     import marimo as mo
     from pathlib import Path
     from src.detection.error_detection import (
@@ -50,7 +49,6 @@ def imports():
         mo,
         object_type_tables,
         llm_ready,
-        os,
         suggest_repair,
         set_active_model,
     )
@@ -102,7 +100,7 @@ def issue_labels():
     # DRILL_LABELS extends ISSUE_LABELS with the sentinels so the drill-in
     # section header renders the paper label rather than the raw key.
     # MERGED_KEYS is the (sentinel, sub_keys) table consumed by
-    # overview_meta / overview_selector_resolve / drill_router so those
+    # overview_meta / overview_buttons / drill_router so those
     # cells stay data-driven as more merges are added.
     N6_MERGED_KEY = "__n6_incorrect_object"
     N6_SUB_KEYS = ["duplicate_objects_on_ids", "duplicate_objects_on_attributes"]
@@ -146,26 +144,15 @@ def header(mo):
 
 
 @app.cell
-def llm_status(mo, llm_ready, set_active_model):
+def llm_status(llm_ready, mo):
     reachable, available_models = llm_ready()
-    if not reachable:
-        _status = mo.md(
-            "⚠️ LLMs not reachable. Start Ollama Desktop (or point OLLAMA_HOST at your Ollama server)."
-        ).callout(kind="warn")
-    else:
-        _status = mo.md(
-            f"✅ LLMs reachable — {len(available_models)} model(s) available."
-        ).callout(kind="success")
-
     model_picker = mo.ui.dropdown(
         options=available_models if available_models else ["(none)"],
         value=available_models[0] if available_models else "(none)",
         label="Model",
+        full_width=True,
     ) if reachable else None
-
-    _picker_view = model_picker if reachable else mo.md("")
-    mo.vstack([_status, _picker_view], gap=0.5)
-    return model_picker, reachable
+    return available_models, model_picker, reachable
 
 
 @app.cell
@@ -247,7 +234,7 @@ def llm_job_runner(llm_job_slot, mo, set_llm_job):
 @app.cell
 def llm_abort_button(mo):
     # One shared button, shown next to whichever job is running.
-    abort_btn = mo.ui.run_button(label="⏹ Abort", kind="danger")
+    abort_btn = mo.ui.run_button(label="Abort", kind="danger")
     return (abort_btn,)
 
 
@@ -260,31 +247,51 @@ def llm_abort_handler(abort_btn, llm_job_slot):
 
 @app.cell
 def file_picker(DATA_DIR, mo):
-    # Discover all sqlite files under data/ recursively, so files under
-    # data/synthetic/ and data/real-world/ both show up. Option values are
-    # paths relative to DATA_DIR so downstream `DATA_DIR / file_picker.value`
-    # keeps working.
-    files = sorted(
-        str(p.relative_to(DATA_DIR))
-        for p in DATA_DIR.rglob("*.sqlite")
-    )
-    # Prefer the corrupted synthetic log as the default so first render
-    # always has something to show; otherwise fall back to any synthetic
-    # file, otherwise the first available.
+    # Every sqlite file under data/ (synthetic and real-world). Option values
+    # are paths relative to DATA_DIR so `DATA_DIR / file_picker.value` works.
+    _files = sorted(str(p.relative_to(DATA_DIR)) for p in DATA_DIR.rglob("*.sqlite"))
+    # Prefer the corrupted synthetic log so first render always has something
+    # to show; otherwise any synthetic file, otherwise the first available.
     _preferred = "synthetic/order-management-corrupted.sqlite"
-    if _preferred in files:
-        default = _preferred
+    if _preferred in _files:
+        _default = _preferred
     else:
-        _synthetic = [f for f in files if f.startswith("synthetic/")]
-        default = _synthetic[0] if _synthetic else (files[0] if files else None)
-    file_picker = mo.ui.dropdown(options=files, value=default, label="OCEL File:")
+        _synthetic = [f for f in _files if f.startswith("synthetic/")]
+        _default = _synthetic[0] if _synthetic else (_files[0] if _files else None)
+    file_picker = mo.ui.dropdown(options=_files, value=_default, label="OCEL file", full_width=True)
     return (file_picker,)
 
 
 @app.cell
-def _top_bar(mo, file_picker):
-    # Layout-only cell so the file picker sits above the Exploration section.
-    mo.hstack([file_picker], justify="start", gap=1.5, align="end")
+def _top_bar(available_models, dr, file_picker, mo, model_picker, reachable):
+    # One row: log picker, model picker, LLM status chip.
+    if reachable:
+        _n = len(available_models)
+        _status = dr.chip(
+            "ok", f"{_n} model{'s' if _n != 1 else ''} available",
+            title="Ollama is reachable; LLM features are enabled.",
+        )
+        _hint = ""
+    else:
+        _status = dr.chip(
+            "warn", "LLM offline",
+            title="Start Ollama Desktop (or point OLLAMA_HOST at your Ollama server).",
+        )
+        _hint = (
+            '<div class="dh-hint">LLMs not reachable. Start Ollama Desktop (or point '
+            'OLLAMA_HOST at your Ollama server). Rule-based detection works without it.</div>'
+        )
+    _model = (
+        f'<div class="dh-control dh-control--model">{model_picker}</div>'
+        if model_picker is not None else ""
+    )
+    mo.Html(
+        '<div class="dh-controls">'
+        f'<div class="dh-control dh-control--file">{file_picker}</div>'
+        f"{_model}"
+        f'<div class="dh-control dh-control--status">{_status}</div>'
+        "</div>" + _hint
+    )
     return
 
 
@@ -305,28 +312,21 @@ def selection_state(mo):
 
 @app.cell
 def overview_picker_state(mo):
-    # Persisted (row_label, col_label) picks for the overview cascade,
-    # plus the LLM sweep's picked object type. Widget rebuilds — which
-    # fire whenever `overview_meta` recomputes (e.g. after any set_flags
-    # write) or `ctx` transitions — preserve these via
-    # `mo.ui.dropdown(value=…)`, so a Confirm click no longer wipes the
-    # user's drill selection or type pick.
-    get_overview_row, set_overview_row = mo.state(None)
-    get_overview_col, set_overview_col = mo.state(None)
+    # The LLM sweep's picked object type. Widget rebuilds — which fire
+    # whenever `overview_meta` recomputes (e.g. after any set_flags write)
+    # or `ctx` transitions — preserve it via `mo.ui.dropdown(value=…)`, so
+    # a Confirm click no longer wipes the user's type pick.
     get_picked_type, set_picked_type = mo.state(None)
     # (sqlite_path, issue_key, ocel_type) of the sweep whose "Judged N …
     # → K proposed flag(s)" banner is currently visible. Set to the just-
     # completed key by `drill_llm_sweep`; cleared to None by any user
-    # interaction (Confirm, Dismiss, type-picker change, file switch).
+    # interaction (Confirm, Dismiss, type-picker change, overview cell
+    # click, file switch).
     get_banner_key, set_banner_key = mo.state(None)
     return (
         get_banner_key,
-        get_overview_col,
-        get_overview_row,
         get_picked_type,
         set_banner_key,
-        set_overview_col,
-        set_overview_row,
         set_picked_type,
     )
 
@@ -348,24 +348,20 @@ def selection_reset_on_file(
     mo,
     set_banner_key,
     set_fix_row_idx,
-    set_overview_col,
-    set_overview_row,
     set_picked_type,
     set_selected_issue,
 ):
     # Side-effect cell: whenever the picked file changes, clear the drill-in
     # selection so nothing leaks across files. `get_flags` and
     # `get_sweep_ran` already key by path, so they don't need reset. The
-    # overview / type pickers are backed by state (see
-    # `overview_picker_state`) so we clear those explicitly here to avoid
-    # a stale row/col/type appearing after switching files.
+    # type picker is backed by state (see `overview_picker_state`) so we
+    # clear it explicitly here to avoid a stale type appearing after
+    # switching files.
     get_prev_path, set_prev_path = mo.state("__init__")
 
     def _reset(current_path: str):
         set_selected_issue(None)
         set_fix_row_idx(0)
-        set_overview_row(None)
-        set_overview_col(None)
         set_picked_type(None)
         set_banner_key(None)
         set_prev_path(current_path)
@@ -408,9 +404,32 @@ def load_results(DATA_DIR, detect_all, file_picker, get_repair_tick):
 
 
 @app.cell
+def log_summary(connect_sqlite, dr, mo, sqlite_path):
+    # A few facts about the selected log, so the issue counts below have a
+    # denominator. Recomputed only when the file changes.
+    def _count(_conn, _sql):
+        try:
+            return _conn.execute(_sql).fetchone()[0]
+        except Exception:  # noqa: BLE001 — a missing table just shows "—"
+            return None
+
+    with connect_sqlite(sqlite_path) as _conn:
+        _stats = {
+            "Events": _count(_conn, "SELECT COUNT(*) FROM event"),
+            "Objects": _count(_conn, "SELECT COUNT(*) FROM object"),
+            "Event Types": _count(_conn, "SELECT COUNT(*) FROM event_map_type"),
+            "Object Types": _count(_conn, "SELECT COUNT(*) FROM object_map_type"),
+            "Event–to-Object Relations": _count(_conn, "SELECT COUNT(*) FROM event_object"),
+            "Object–to-Object Relations": _count(_conn, "SELECT COUNT(*) FROM object_object"),
+        }
+    mo.Html(dr.stats_strip(_stats))
+    return
+
+
+@app.cell
 def exploration_button(llm_enabled, mo):
     explore_btn = mo.ui.run_button(
-        label="🔎 Run exploration", disabled=not llm_enabled
+        label="Run exploration", kind="success", disabled=not llm_enabled
     )
     return (explore_btn,)
 
@@ -419,10 +438,6 @@ def exploration_button(llm_enabled, mo):
 def exploration_run(
     DATA_DIR, busy_notice, explore_btn, explore_database, file_picker, model_picker, start_llm_job
 ):
-    # Starts the exploration agent for the selected log as a background job
-    # (~0.5 min per object type); progress, Abort and the outcome are shown
-    # by `exploration_view`. Artifacts go next to the log
-    # (<db_dir>/exploration/<stem>/), where the repair tasks look hints up.
     exploration_notice = None
     if explore_btn.value and file_picker.value:
         _db = str(DATA_DIR / file_picker.value)
@@ -487,35 +502,33 @@ def exploration_view(
                 else mo.md("✅ Exploration finished.").callout(kind="success")
             )
 
+    # Status chip + collapsible report.
     _report = load_report(_db) if _db else ""
     _stale = guide_is_stale(_db) if _db else True
-
     if not _report:
-        _status = mo.md(
-            "No exploration report for this log yet. Run exploration once to give "
-            "the repair agents log-specific context (id semantics, attribute hints)."
-        ).callout(kind="neutral")
-        _report_view = mo.md("")
-    else:
-        _status = (
-            mo.md(
-                "⚠️ The log's structure changed since this report was built — re-run exploration."
-            ).callout(kind="warn")
-            if _stale
-            else mo.md(
-                "✅ Exploration report is up to date — repair agents receive hints from it."
-            ).callout(kind="success")
+        _chip = dr.chip(
+            "neutral", "No report yet",
+            title="Run exploration once to give the repair agents log-specific context.",
         )
-        _report_view = mo.accordion({
-            "Exploration report": mo.md(_report).style(
-                {"max-height": "480px", "overflow-y": "auto", "padding-right": "1rem"}
-            )
-        })
+        _report_view = mo.Html("")
+    elif _stale:
+        _chip = dr.chip(
+            "warn", "Report outdated",
+            title="The log's structure changed since this report was built. Re-run exploration.",
+        )
+        _report_view = mo.Html(dr.details("Show Exploration Report", mo.md(_report).text))
+    else:
+        _chip = dr.chip(
+            "ok", "Report up to date",
+            title="Repair agents receive hints from this report.",
+        )
+        _report_view = mo.Html(dr.details("Show Exploration Report", mo.md(_report).text))
 
     _section_header = mo.Html(dr.render_section_header_html(
         "Exploration",
         "Run once per file so the repair agents have log-specific hints "
         "(id semantics, attribute patterns).",
+        right=_chip,
     ))
 
     mo.vstack(
@@ -524,7 +537,6 @@ def exploration_view(
             mo.hstack([explore_btn], justify="start"),
             _notice or mo.md(""),
             exploration_result or mo.md(""),
-            _status,
             _report_view,
         ],
         gap=0.5,
@@ -624,8 +636,10 @@ def sweep_result_state(mo):
 # Split into four cells so marimo's "no reading own value" rule holds:
 #   overview_config   — static row / column schema
 #   overview_meta     — computes per-cell {kind, count, issue_key, …}
-#   overview_layout   — renders the static HTML overview table
-#   overview_selector — dropdown widget that writes set_selected_issue
+#   overview_buttons  — one button per interactive cell; a click writes
+#                       set_selected_issue
+#   overview_layout   — renders the HTML overview table with the buttons
+#                       interpolated into their cells
 
 @app.cell
 def overview_config():
@@ -836,204 +850,88 @@ def overview_meta(
 
 
 @app.cell
+def overview_buttons(
+    dr,
+    get_selected_issue,
+    mo,
+    overview_cell_meta,
+    set_banner_key,
+    set_selected_issue,
+):
+    """One button per interactive overview cell (count or pending).
+
+    A click selects that cell's issue for the drill-in below; clicking the
+    selected cell again closes the drill-in. The buttons are *created* here
+    and *rendered* in `overview_layout`: marimo never re-runs a cell for a
+    state write made by its own widget's callback, so the highlight of the
+    selected cell must be redrawn by a different cell.
+
+    `overview_button_index` maps the cell key ("r_idx:c_idx") to the
+    button's position in `overview_cell_buttons`.
+    """
+    def _select(issue_key):
+        # Toggle: clicking the selected cell deselects it.
+        set_selected_issue(None if get_selected_issue() == issue_key else issue_key)
+        set_banner_key(None)   # any user interaction hides the sweep banner
+
+    _buttons: list = []
+    overview_button_index: dict[str, int] = {}
+    for _key, _spec in overview_cell_meta.items():
+        if _spec["kind"] not in ("count", "pending"):
+            continue
+        overview_button_index[_key] = len(_buttons)
+        _buttons.append(mo.ui.button(
+            label=dr.overview_cell_label(_spec),
+            tooltip=dr.overview_cell_tooltip(_spec),
+            full_width=True,
+            on_click=lambda _value, _issue=_spec["issue_key"]: _select(_issue),
+        ))
+    overview_cell_buttons = mo.ui.array(_buttons)
+    return overview_button_index, overview_cell_buttons
+
+
+@app.cell
 def overview_layout(
     col_groups,
     cols_flat,
     dr,
     get_selected_issue,
     mo,
+    overview_button_index,
+    overview_cell_buttons,
     overview_cell_meta,
     rows,
 ):
-    """Render the paper-Table-3 overview as a static HTML `<table>`.
+    """Render the paper-Table-3 overview as an HTML `<table>` with the
+    cell buttons from `overview_buttons` interpolated into their cells.
 
-    No widgets live inside cells — this cell is pure HTML. Interaction
-    lives one cell down in `overview_selector` (a dropdown) which writes
-    the same `set_selected_issue(...)` state. The cell whose issue_key
-    matches the current selection is highlighted so the user can see
-    where the focused issue sits in Basmer et al.'s classification.
+    The cell whose issue_key matches the current selection is highlighted
+    so the user can see where the focused issue sits in Basmer et al.'s
+    classification.
     """
     _summary_header = mo.Html(dr.render_section_header_html(
         "Issue Overview",
         "Detected data-quality issues per category and dimension. "
-        "Pick a category and dimension below to drill in.",
+        "Click a cell to drill in; click it again to close.",
     ))
 
+    _cell_html = {
+        _key: f"{overview_cell_buttons[_idx]}"
+        for _key, _idx in overview_button_index.items()
+    }
     _table_html = dr.render_overview_table_html(
         rows=rows,
         col_groups=col_groups,
         cols_flat=cols_flat,
         cell_meta=overview_cell_meta,
         selected_issue_key=get_selected_issue(),
+        cell_buttons=_cell_html,
     )
 
-    mo.vstack([_summary_header, mo.Html(_table_html)], gap=0)
-    return
-
-
-@app.cell
-def overview_selector(
-    cols_flat,
-    get_overview_row,
-    mo,
-    overview_cell_meta,
-    rows,
-    set_overview_row,
-):
-    """Row-first cascading dropdowns for the drill-in focus.
-
-    Replaces the single "Focus on:" dropdown which grew unwieldy as issue
-    types were added. The two dropdowns mirror the Basmer et al. Table 3
-    grid rendered above: pick a data-quality *category* (row) first, then
-    the *OCED dimension* (column). The picked (row, col) cell is
-    resolved to an issue key downstream in `overview_selector_resolve`.
-
-    The dropdown's value is mirrored in `get_overview_row`/`set_overview_row`
-    so that widget rebuilds (which fire whenever `overview_meta` recomputes
-    — e.g. after any `set_flags` write) don't clobber the user's selection.
-    Empty combinations are hidden (rows with no populated columns are
-    excluded from the row dropdown; columns not intersecting the picked
-    row are excluded from the column dropdown).
-    """
-    # Inverse index: (row_label, col_label) -> cell meta. `overview_cell_meta`
-    # is keyed by "r_idx:c_idx" — build a label-keyed view once so filtering
-    # below reads cleanly.
-    _by_labels: dict[tuple[str, str], dict] = {
-        (_spec["row_label"], _spec["col_label"]): _spec
-        for _spec in overview_cell_meta.values()
-    }
-
-    def _has_issues(row_label: str, col_label: str) -> bool:
-        _spec = _by_labels.get((row_label, col_label))
-        return _spec is not None and _spec["kind"] in ("count", "pending")
-
-    # Row dropdown — restricted to rows with at least one populated column
-    # under any group. Value = the row label itself (e.g. "Missing Data").
-    # Rendered in `overview_column_selector` below alongside the column
-    # picker so both dropdowns share one hstack row.
-    _row_options = [_row for _row in rows if any(_has_issues(_row, _c) for _c in cols_flat)]
-    _persisted_row = get_overview_row()
-    _initial_row = _persisted_row if _persisted_row in _row_options else None
-    # Guard against empty options — if no rows are eligible (e.g. mid-rebuild
-    # after a sweep), render a sentinel placeholder rather than passing an
-    # empty list into mo.ui.dropdown. (We don't pass `disabled=` because
-    # older marimo versions don't accept it as a kwarg.)
-    row_picker_widget = mo.ui.dropdown(
-        options=_row_options or ["— no categories —"],
-        label="Category:",
-        value=_initial_row,
-        on_change=set_overview_row,
+    mo.vstack(
+        [_summary_header, mo.Html(_table_html), mo.Html(dr.overview_legend_html())],
+        gap=0,
     )
-    return (row_picker_widget,)
-
-
-@app.cell
-def overview_column_selector(
-    col_groups,
-    get_overview_col,
-    mo,
-    overview_cell_meta,
-    row_picker_widget,
-    set_overview_col,
-):
-    """Column dropdown, cascaded from the row picker. Rebuilt whenever the
-    row picker's value changes so its options only include columns that
-    intersect the picked row and are non-empty.
-
-    Mirrored in `get_overview_col`/`set_overview_col` so rebuilds
-    triggered by upstream state changes (e.g. `set_flags` writes rippling
-    through `overview_meta` → `overview_selector`) don't clobber the
-    user's column pick."""
-    _selected_row = row_picker_widget.value
-
-    _by_labels: dict[tuple[str, str], dict] = {
-        (_spec["row_label"], _spec["col_label"]): _spec
-        for _spec in overview_cell_meta.values()
-    }
-
-    def _has_issues(row_label: str, col_label: str) -> bool:
-        _spec = _by_labels.get((row_label, col_label))
-        return _spec is not None and _spec["kind"] in ("count", "pending")
-
-    # Options: for the picked row, iterate columns in paper order, prefix
-    # them with the OCED group name (Events / Objects / Relations) so
-    # "Event Type" reads distinctly from "Object Type".
-    _col_options: dict[str, str] = {}  # label -> col
-    if _selected_row is not None:
-        for _group_name, _cols in col_groups:
-            for _col in _cols:
-                if not _has_issues(_selected_row, _col):
-                    continue
-                _col_options[f"{_group_name}: {_col}"] = _col
-
-    _persisted_col = get_overview_col()
-    # ``mo.ui.dropdown`` with a dict-shaped ``options`` validates the
-    # ``value=`` argument against the option KEYS (labels), but passes
-    # the mapped VALUE to ``on_change``. We persist the bare column
-    # name (what downstream code reads via ``widget.value``); translate
-    # it back to the label here so validation succeeds on rebuild —
-    # without this, a persisted "Object Type" is rejected against
-    # keys like "Objects: Object Type" and the whole cell crashes,
-    # taking the row picker down with it.
-    _label_for_col = {v: k for k, v in _col_options.items()}
-    _initial_label = _label_for_col.get(_persisted_col)
-    # Guard against empty options — if the picked row has no eligible
-    # columns (or no row is picked yet), render a sentinel placeholder
-    # rather than passing an empty dict into mo.ui.dropdown. (We don't
-    # pass `disabled=` because older marimo versions don't accept it as
-    # a kwarg.)
-    col_picker_widget = mo.ui.dropdown(
-        options=_col_options or {"— no dimensions —": None},
-        label="Dimension:",
-        value=_initial_label,
-        on_change=set_overview_col,
-    )
-    # Bind the hstack to a local so it's unambiguously the cell's output —
-    # a bare expression immediately followed by ``return`` can be fragile
-    # in marimo's cell-output parsing, and this cell has been observed to
-    # stop rendering after LLM-sweep state cascades. Same pattern used in
-    # ``drill_shell_top`` / ``drill_shell_bottom``.
-    _pickers_row = mo.hstack(
-        [row_picker_widget, col_picker_widget], justify="start", gap=1,
-    )
-    _pickers_row
-    return (col_picker_widget,)
-
-
-@app.cell
-def overview_selector_resolve(
-    MERGED_KEYS,
-    col_picker_widget,
-    get_selected_issue,
-    mapping,
-    row_picker_widget,
-    set_selected_issue,
-):
-    """Turn the (row, col) pick into an issue key and write it into
-    `set_selected_issue`. Kept in its own cell so `overview_selector`
-    only owns widget layout — downstream re-runs of the widgets don't
-    re-fire until the user actually changes a selection."""
-    _row = row_picker_widget.value
-    _col = col_picker_widget.value
-
-    def _issue_key_for(row_label, col_label):
-        keys = mapping.get((row_label, col_label))
-        if not keys:
-            return None
-        if len(keys) == 1:
-            return keys[0]
-        for sentinel, sub_keys in MERGED_KEYS:
-            if set(keys) == set(sub_keys):
-                return sentinel
-        return keys[0]
-
-    if _row is None or _col is None:
-        _resolved = None
-    else:
-        _resolved = _issue_key_for(_row, _col)
-
-    if _resolved != get_selected_issue():
-        set_selected_issue(_resolved)
     return
 
 
@@ -1118,29 +1016,18 @@ def drill_llm_controls(
     set_picked_type,
     sqlite_path,
 ):
-    """Type picker + Run button. Available in ``llm_pending`` AND
-    ``llm_with_flags`` — the mode transitions to ``llm_with_flags`` after
-    the first Confirm, but the user may still want to run sweeps on other
-    types.
-
-    The picker scopes the LLM sweep. Object-side issues (e.g.
-    ``incorrect_object_type``, ``incorrect_attribute_value``) pick from
-    object types; event-side issues (``incorrect_event_attribute_value``)
-    pick from event types. The distinction comes from
-    ``src.llm.candidate_sources.candidate_kind`` so a new detector only
-    has to register its kind, not touch this cell.
-
-    The type picker's value is mirrored in `get_picked_type`/`set_picked_type`
-    so mode transitions (which cause this cell to re-run and rebuild the
-    widget) don't wipe the user's pick. Picking a different type also
-    clears the sweep banner via `set_banner_key(None)`."""
+    """Type picker + Run button for the LLM sweep (available in both
+    ``llm_pending`` and ``llm_with_flags``). Object-side issues pick from
+    object types, event-side issues from event types; the kind comes from
+    ``src.llm.candidate_sources.candidate_kind``. The picked type is
+    mirrored in `get_picked_type` so mode transitions keep it; picking a
+    different type also clears the sweep banner."""
     _kind = candidate_kind(ctx["issue_key"]) if ctx["issue_key"] else "object"
     _label = "Event type" if _kind == "event" else "Object type"
     if ctx["mode"] not in ("llm_pending", "llm_with_flags"):
-        # Widgets must still exist so downstream cells can read them, but
-        # they don't need to be usable.
+        # Widgets must still exist so downstream cells can read them.
         type_picker = mo.ui.dropdown(options=[], label=_label)
-        detect_btn = mo.ui.run_button(label="Run detection", disabled=True)
+        detect_btn = mo.ui.run_button(label="Run detection", kind="success", disabled=True)
     else:
         with connect_sqlite(sqlite_path) as _conn:
             _lookup = event_type_tables if _kind == "event" else object_type_tables
@@ -1160,8 +1047,7 @@ def drill_llm_controls(
             on_change=_on_type_change,
         )
         detect_btn = mo.ui.run_button(
-            label=f"Run detection on selected {_label.lower()}",
-            disabled=not llm_enabled or not _types,
+            label="Run detection", kind="success", disabled=not llm_enabled or not _types,
         )
     return detect_btn, type_picker
 
@@ -1191,8 +1077,7 @@ def drill_shell_top(
             f'<div style="font-size:20px; font-weight:700; color:#1f2328; '
             f'letter-spacing:-0.01em;">{_label}</div>'
             f'<div style="margin-top:4px; color:#57606a; font-size:13px;">'
-            f'Detected rows (treated as ground truth), followed by the fix '
-            f'area.</div>'
+            f'Detected rows, followed by the fix area.</div>'
             '</div>'
         )
         _parts: list = [_header]
@@ -1445,12 +1330,12 @@ def drill_llm_proposals(ctx, get_sweep_result, sqlite_path):
 
 @app.cell
 def drill_llm_confirm_buttons(mo, proposals_all):
-    """Per-proposal Confirm/Dismiss buttons — mirrors the old
-    expert_detection_buttons split (widgets here, values read downstream)."""
+    """Per-proposal Confirm / Dismiss buttons (widgets here, values read
+    by the observer cells below)."""
     if proposals_all:
         _n = len(proposals_all)
         agree_array = mo.ui.array([
-            mo.ui.button(value=0, on_click=lambda v: v + 1, label="Confirm")
+            mo.ui.button(value=0, on_click=lambda v: v + 1, label="Confirm", kind="success")
             for _ in range(_n)
         ])
         reject_array = mo.ui.array([
@@ -2002,7 +1887,7 @@ def drill_fix_picker_observer(
 
 @app.cell
 def drill_fix_buttons(ctx, fix_rows, llm_enabled, mo):
-    ask_btn = mo.ui.run_button(label="Ask domain expert", disabled=not llm_enabled)
+    ask_btn = mo.ui.run_button(label="Ask domain expert", kind="success", disabled=not llm_enabled)
     dry_run_toggle = mo.ui.switch(value=True, label="Dry run")
     apply_btn = mo.ui.run_button(label="Apply", kind="danger")
     show_buttons = (
@@ -2232,7 +2117,7 @@ def drill_shell_bottom(
     between this and the header/controls above."""
     if ctx["mode"] == "empty":
         _bottom = mo.md(
-            "_Pick a category and issue in the dropdowns above to drill in._"
+            "_Click a cell in the Issue Overview above to drill in._"
         ).callout(kind="neutral")
     else:
         _parts: list = []

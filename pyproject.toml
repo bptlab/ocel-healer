@@ -12,7 +12,7 @@ dependencies = [
     "polars",
     "jupyter",
     "ipykernel",
-    "marimo",
+    "marimo>=0.23.14,<0.24",
     "pydantic>=2",
     "pyyaml",
 ]
