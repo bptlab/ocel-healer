@@ -5,7 +5,6 @@ app = marimo.App(width="full", css_file="dashboard.css")
 
 @app.cell
 def imports():
-    import os
     import marimo as mo
     from pathlib import Path
     from src.detection.error_detection import (
@@ -50,7 +49,6 @@ def imports():
         mo,
         object_type_tables,
         llm_ready,
-        os,
         suggest_repair,
         set_active_model,
     )
@@ -406,7 +404,7 @@ def load_results(DATA_DIR, detect_all, file_picker, get_repair_tick):
 
 
 @app.cell
-def log_summary(connect_sqlite, dr, mo, os, sqlite_path):
+def log_summary(connect_sqlite, dr, mo, sqlite_path):
     # A few facts about the selected log, so the issue counts below have a
     # denominator. Recomputed only when the file changes.
     def _count(_conn, _sql):
@@ -419,12 +417,11 @@ def log_summary(connect_sqlite, dr, mo, os, sqlite_path):
         _stats = {
             "Events": _count(_conn, "SELECT COUNT(*) FROM event"),
             "Objects": _count(_conn, "SELECT COUNT(*) FROM object"),
-            "Event types": _count(_conn, "SELECT COUNT(*) FROM event_map_type"),
-            "Object types": _count(_conn, "SELECT COUNT(*) FROM object_map_type"),
-            "Event–object links": _count(_conn, "SELECT COUNT(*) FROM event_object"),
-            "Object–object links": _count(_conn, "SELECT COUNT(*) FROM object_object"),
+            "Event Types": _count(_conn, "SELECT COUNT(*) FROM event_map_type"),
+            "Object Types": _count(_conn, "SELECT COUNT(*) FROM object_map_type"),
+            "Event–to-Object Relations": _count(_conn, "SELECT COUNT(*) FROM event_object"),
+            "Object–to-Object Relations": _count(_conn, "SELECT COUNT(*) FROM object_object"),
         }
-    _stats["File size"] = f"{os.path.getsize(sqlite_path) / 1e6:.1f} MB"
     mo.Html(dr.stats_strip(_stats))
     return
 
@@ -441,10 +438,6 @@ def exploration_button(llm_enabled, mo):
 def exploration_run(
     DATA_DIR, busy_notice, explore_btn, explore_database, file_picker, model_picker, start_llm_job
 ):
-    # Starts the exploration agent for the selected log as a background job
-    # (~0.5 min per object type); progress, Abort and the outcome are shown
-    # by `exploration_view`. Artifacts go next to the log
-    # (<db_dir>/exploration/<stem>/), where the repair tasks look hints up.
     exploration_notice = None
     if explore_btn.value and file_picker.value:
         _db = str(DATA_DIR / file_picker.value)
@@ -906,8 +899,8 @@ def overview_layout(
     mo,
     overview_button_index,
     overview_cell_buttons,
-    rows,
     overview_cell_meta,
+    rows,
 ):
     """Render the paper-Table-3 overview as an HTML `<table>` with the
     cell buttons from `overview_buttons` interpolated into their cells.

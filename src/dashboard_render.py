@@ -117,11 +117,16 @@ PENDING_LABEL_HTML = f'<span style="{_PENDING_BADGE_STYLE}">?</span>'
 # `Missing / Obj. Attr. Type` and `Missing / Evt. Attr. Type`: a missing
 # value has no declared datatype, so the datatype-missing cell can't have
 # any content by construction.
+_NA_BADGE_STYLE = (
+    "display:inline-block; padding:1px 8px; border-radius:10px; "
+    "font-size:12px; font-weight:700; color:#57606a; background:#eaeef2;"
+)
 NA_HTML = (
     '<span title="Not applicable — a missing value has no declared datatype." '
-    'style="display:inline-block; padding:1px 8px; border-radius:10px; '
-    'font-size:12px; font-weight:700; color:#57606a; background:#eaeef2;">N/A</span>'
+    f'style="{_NA_BADGE_STYLE}">N/A</span>'
 )
+# Same badge without the `title` — used in the legend.
+NA_LABEL_HTML = f'<span style="{_NA_BADGE_STYLE}">N/A</span>'
 
 
 def pill_html(n: int) -> str:
@@ -161,17 +166,15 @@ def overview_cell_tooltip(spec: dict) -> str:
     return f"{where}: {n:,} row(s) detected. Click to drill in, click again to close."
 
 
-
 def overview_legend_html() -> str:
     """Legend under the Issue Overview. Built from the same badge helpers as
     the table cells, so the two cannot drift apart. The dash (`DASH_HTML`,
     a cell without a detector) is left out: every cell is mapped today."""
     items = [
-        (pill_html(12), "issues found"),
+        (pill_html(1), "issues found"),
         (pill_html(0), "no issues found"),
         (PENDING_LABEL_HTML, "LLM-based check, not run yet for this log"),
-        (NA_HTML.replace(' title="Not applicable — a missing value has no declared datatype."', ""),
-         "not applicable"),
+        (NA_LABEL_HTML, "not applicable"),
     ]
     return '<div class="dh-legend">' + "".join(
         f'<span class="dh-legend-item">{badge}<span>{esc(text)}</span></span>'
@@ -299,7 +302,7 @@ def render_overview_table_html(
     # so no leading corner cell here.
     _col_cells = []
     for _c in cols_flat:
-        _col_cells.append(f'<th style="{SUMMARY_TH_COL_STYLE}">{_c}</th>')
+        _col_cells.append(f'<th style="{SUMMARY_TH_COL_STYLE}">{esc(_c)}</th>')
     _col_row = "<tr>" + "".join(_col_cells) + "</tr>"
 
     # Body rows.
@@ -324,7 +327,7 @@ def render_overview_table_html(
             elif _kind == "na":
                 _content = NA_HTML
             elif cell_buttons is not None and _key in cell_buttons:
-                _content = f'<div class="ov-btn">{cell_buttons[_key]}</div>'
+                _content = cell_buttons[_key]
             elif _kind == "pending":
                 _content = PENDING_HTML
             else:

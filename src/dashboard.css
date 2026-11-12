@@ -3,24 +3,11 @@
    the only way to restyle its buttons and dropdowns (`:host(marimo-button)
    button …`). The `.dh-*` classes are produced by the HTML builders in
    src/dashboard_render.py (controls row, status chip, stats strip,
-   collapsible report). */
+   collapsible report).
 
-:root {
-  --dh-text: #1f2328;
-  --dh-muted: #57606a;
-  --dh-border: #d0d7de;
-  --dh-surface: #ffffff;
-  --dh-accent: #0969da;
-  --dh-accent-bg: #ddf4ff;
-  --dh-ok: #1a7f37;
-  --dh-ok-bg: #dafbe1;
-  --dh-warn: #9a6700;
-  --dh-warn-bg: #fff8c5;
-  --dh-danger: #cf222e;
-  --dh-danger-bg: #fde2e2;
-  --dh-radius-sm: 6px;
-  --dh-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
+   Several selectors below target marimo's own markup (Tailwind classes such
+   as `bg-success`, `w-full`, and the page-outline container). Tested with
+   marimo 0.23.x; re-check the buttons and the Issue Overview after upgrading. */
 
 /* ── Buttons: one size and shape for every button on the page ─────────── */
 :host(marimo-button) button {
