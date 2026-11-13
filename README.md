@@ -13,6 +13,7 @@ You can connect any model served by [Ollama](https://ollama.com), on this machin
 
 ## Contents
 
+- [A short tour](#a-short-tour)
 - [Installation](#installation)
 - [Quick start: the dashboard](#quick-start-the-dashboard)
 - [Setting up the LLM (Ollama)](#setting-up-the-llm-ollama)
@@ -21,6 +22,26 @@ You can connect any model served by [Ollama](https://ollama.com), on this machin
 - [Repository structure](#repository-structure)
 - [Requirements](#requirements)
 - [Troubleshooting](#troubleshooting)
+
+## A short tour
+
+The screenshots below follow one issue through the dashboard, on the bundled synthetic log `data/synthetic/order-management-corrupted.sqlite` with the model `qwen2.5:7b`.
+
+**1. Open a log.** The dashboard shows a few log statistics and the *Issue Overview*: the number of detected issues per category (missing or incorrect data) and per element of the log (events, objects, relations). Red numbers are issues the rule-based detectors found. A yellow **?** marks an LLM-based check that has not been run on this log yet.
+
+![The dashboard after opening the synthetic log: log and model pickers, log statistics, the Exploration section and the Issue Overview table with its legend](docs/images/01-overview.png)
+
+**2. Explore the log once.** *Run exploration* profiles the log and asks the LLM to describe it. The report is saved next to the log and gives the LLM steps context such as the process, the object types and typical values.
+
+![The Exploration section with the report expanded: the LLM describes the log as an order fulfilment process and lists object types, events and qualifiers](docs/images/02-exploration.png)
+
+**3. Drill into an issue and ask for a repair.** Clicking *Missing Data / Event Type* lists three events without a type. For the first one, *Ask domain expert* proposes the type `confirm order`. It explains why, based on the event id and the order the event is linked to, and gives its confidence.
+
+![Drill-in for Missing Event Type: three events with an empty type, and a repair proposal setting the first one to "confirm order" with confidence 0.90](docs/images/03-drill-in-and-proposal.png)
+
+**4. Check the change, then apply it.** With *Dry run* on, *Apply* only shows the SQL it would run. Switch *Dry run* off and press *Apply* again to write the change to the log.
+
+![The dry-run result: the UPDATE statement and its parameters, marked as not written](docs/images/04-dry-run.png)
 
 ## Installation
 
