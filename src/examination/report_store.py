@@ -1,16 +1,16 @@
-# src/exploration/report_store.py
+# src/examination/report_store.py
 
-"""Per-database storage for exploration artifacts.
+"""Per-database storage for examination artifacts.
 
-Artifacts live next to the data: each explored database gets its own
-directory under an `exploration/` folder beside the sqlite file, keyed by the
+Artifacts live next to the data: each examined database gets its own
+directory under an `examination/` folder beside the sqlite file, keyed by the
 file's stem, so reports for different logs never overwrite each other:
 
-    <db_dir>/exploration/<db_stem>/exploration_profile.json
-    <db_dir>/exploration/<db_stem>/exploration_guide.json
-    <db_dir>/exploration/<db_stem>/exploration_report.md
+    <db_dir>/examination/<db_stem>/examination_profile.json
+    <db_dir>/examination/<db_stem>/examination_guide.json
+    <db_dir>/examination/<db_stem>/examination_report.md
 
-e.g. data/synthetic/exploration/order-management-corrupted/. This is the
+e.g. data/synthetic/examination/order-management-corrupted/. This is the
 single convention shared by the dashboard, the CLI, the repair tasks' hint
 lookup and the evaluation; pass `base_dir` only to override it.
 """
@@ -20,25 +20,25 @@ from pathlib import Path
 from typing import Any
 
 def default_base_dir(db_path: str | Path) -> Path:
-    """`<db_dir>/exploration` — where artifacts for `db_path` live by default."""
-    return Path(db_path).parent / "exploration"
+    """`<db_dir>/examination` — where artifacts for `db_path` live by default."""
+    return Path(db_path).parent / "examination"
 
 
-def exploration_dir(db_path: str | Path, base_dir: str | Path | None = None) -> Path:
+def examination_dir(db_path: str | Path, base_dir: str | Path | None = None) -> Path:
     base = Path(base_dir) if base_dir is not None else default_base_dir(db_path)
     return base / Path(db_path).stem
 
 
 def profile_path(db_path: str | Path, base_dir: str | Path | None = None) -> Path:
-    return exploration_dir(db_path, base_dir) / "exploration_profile.json"
+    return examination_dir(db_path, base_dir) / "examination_profile.json"
 
 
 def guide_path(db_path: str | Path, base_dir: str | Path | None = None) -> Path:
-    return exploration_dir(db_path, base_dir) / "exploration_guide.json"
+    return examination_dir(db_path, base_dir) / "examination_guide.json"
 
 
 def report_path(db_path: str | Path, base_dir: str | Path | None = None) -> Path:
-    return exploration_dir(db_path, base_dir) / "exploration_report.md"
+    return examination_dir(db_path, base_dir) / "examination_report.md"
 
 
 def save_json(path: Path, data: dict[str, Any]) -> None:
@@ -75,7 +75,7 @@ def current_fingerprint(db_path: str | Path) -> str:
     """`schema_fingerprint` of the log, recomputed only when the file changed
     (mtime or size). The dashboard asks on every refresh, and the scan takes
     up to a second on the large real-world logs."""
-    from src.exploration.db_profiler import connect_readonly, schema_fingerprint
+    from src.examination.db_profiler import connect_readonly, schema_fingerprint
 
     p = Path(db_path)
     st = p.stat()

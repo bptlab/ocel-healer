@@ -5,7 +5,7 @@ Detection and LLM-assisted repair of data-quality issues in object-centric event
 OCEL-Healer combines four steps:
 
 1. **Rule-based detection** finds data-quality issues deterministically (missing values, duplicates, dangling relations, wrong attribute types, …). No LLM is needed for this.
-2. **Exploration** profiles the log once (id patterns, value vocabularies, null rates, …) and lets the LLM turn the profile into a short guide. Both are used in the next two steps as hints specific to that log.
+2. **Examination** profiles the log once (id patterns, value vocabularies, null rates, …) and lets the LLM turn the profile into a short guide. Both are used in the next two steps as hints specific to that log.
 3. **LLM-based detection** covers issues that need domain judgement: an object or event assigned to the wrong type, an implausible timestamp or attribute value, an attribute a type should have but does not. An LLM served by [Ollama](https://ollama.com) judges the candidate rows of a chosen type and flags suspects; the user confirms or dismisses each flag before it counts as detected.
 4. **LLM-based repair** asks the LLM to propose a fix for each detected issue, whether it came from the rules or from the LLM. Proposals are shown with their confidence before anything is written.
 
@@ -103,8 +103,8 @@ The dashboard opens in your browser (use `marimo edit src/dashboard.py` to also 
 - **Pick a log** from the *OCEL File* dropdown. It lists every `*.sqlite` under `data/` and preselects `data/synthetic/order-management-corrupted.sqlite`, a log with known, injected issues.
 - **Rule-based detection** runs immediately, with or without an LLM.
 - **Click a cell in the Issue Overview** to drill into that issue; click it again to close the drill-in.
-- **LLM features** (exploration, LLM-based detection, repair suggestions) become available once Ollama is running and at least one model is pulled (next section). Pick the model in the *Model* dropdown. Overview cells that need the LLM show a yellow **?** badge until you click them, pick a type and click *Run detection*; flags you confirm are then counted in the Overview.
-- **Long LLM steps can be stopped.** While exploration, an LLM detection run or *Ask domain expert* is running, a progress line with an **Abort** button is shown. Aborting stops at once, including the request the model is working on. An aborted detection run keeps the verdicts it already has; an aborted exploration keeps the previous report. Only one LLM step runs at a time.
+- **LLM features** (examination, LLM-based detection, repair suggestions) become available once Ollama is running and at least one model is pulled (next section). Pick the model in the *Model* dropdown. Overview cells that need the LLM show a yellow **?** badge until you click them, pick a type and click *Run detection*; flags you confirm are then counted in the Overview.
+- **Long LLM steps can be stopped.** While examination, an LLM detection run or *Ask domain expert* is running, a progress line with an **Abort** button is shown. Aborting stops at once, including the request the model is working on. An aborted detection run keeps the verdicts it already has; an aborted examination keeps the previous report. Only one LLM step runs at a time.
 
 > **Applying a repair modifies the selected `.sqlite` file in place.** To restore a bundled log, run `git checkout -- data/<path>.sqlite`. To keep the originals untouched, copy a log into `data/` under a new name and work on the copy.
 
@@ -132,14 +132,14 @@ ollama list               # check what is available
 **Any model served by Ollama can be used.** The dashboard lists every pulled model in its *Model* dropdown. For the command-line tools, pass `--model <name>` or set `OCEL_LLM_MODEL`. Notes on choosing a model:
 
 - The model must return JSON. Ollama's JSON mode is requested automatically, so most instruction-tuned models work.
-- Each repair call has a 60 s timeout and each exploration step 180 s. On slow hardware, or with "thinking"/reasoning models that produce long outputs, these can be exceeded. In that case pick a smaller or non-reasoning model.
+- Each repair call has a 60 s timeout and each examination step 180 s. On slow hardware, or with "thinking"/reasoning models that produce long outputs, these can be exceeded. In that case pick a smaller or non-reasoning model.
 - Use the model's exact Ollama name including the tag (e.g. `qwen3:8b`, not `qwen3`).
 
 ### 4. Configuration (environment variables)
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `OCEL_LLM_MODEL` | `qwen3:8b` | Default model for `python -m src.exploration` and other library calls. The dashboard uses its *Model* dropdown instead. |
+| `OCEL_LLM_MODEL` | `qwen3:8b` | Default model for `python -m src.examination` and other library calls. The dashboard uses its *Model* dropdown instead. |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama server to use, e.g. one running on another machine. |
 | `OCEL_LLM_MIN_CONFIDENCE` | `0.4` | Repairs whose LLM confidence is below this threshold are not applied (lower → more, riskier repairs). |
 
@@ -177,32 +177,32 @@ corrupt_database(DEFAULT_CLEAN_PATH, level="all")   # levels: legacy, easy, medi
 
 With `level="all"` this regenerates `data/synthetic/order-management-corrupted.sqlite`.
 
-### Exploration
+### Examination
 
-Before the LLM steps run on a log, the exploration step analyses it and produces knowledge that LLM detection and LLM repair receive as `exploration_hints`. It consists of a deterministic profile (schemas, null rates, id templates, value vocabularies, qualifier anomalies) and an LLM-written interpretation guide.
+Before the LLM steps run on a log, the examination step analyses it and produces knowledge that LLM detection and LLM repair receive as `examination_hints`. It consists of a deterministic profile (schemas, null rates, id templates, value vocabularies, qualifier anomalies) and an LLM-written interpretation guide.
 
-Run it from the dashboard (pick a log and a model, press **🔎 Run exploration**) or from the command line:
+Run it from the dashboard (pick a log and a model, press **🔎 Run examination**) or from the command line:
 
 ```bash
-python -m src.exploration data/synthetic/order-management-corrupted.sqlite --model qwen3:8b
+python -m src.examination data/synthetic/order-management-corrupted.sqlite --model qwen3:8b
 ```
 
-The artifacts are written **next to the log**, in `<log folder>/exploration/<log name>/`. For the example above that is `data/synthetic/exploration/order-management-corrupted/`:
+The artifacts are written **next to the log**, in `<log folder>/examination/<log name>/`. For the example above that is `data/synthetic/examination/order-management-corrupted/`:
 
-- `exploration_report.md`: human-readable summary (also shown in the dashboard)
-- `exploration_profile.json`: deterministic facts, the source of truth for hints
-- `exploration_guide.json`: LLM interpretations (optional layer)
+- `examination_report.md`: human-readable summary (also shown in the dashboard)
+- `examination_profile.json`: deterministic facts, the source of truth for hints
+- `examination_guide.json`: LLM interpretations (optional layer)
 
 The dashboard, the CLI and the LLM detection and repair steps all use this location, so a report created by any of them is picked up by the others. Repair also works without a report, just without log-specific hints. If the log's structure changes (tables, types, qualifiers), the report is marked stale and should be regenerated.
 
-### Evaluating the exploration hints
+### Evaluating the examination hints
 
 ```bash
 python -m src.evaluation.evaluate_hints --model qwen3:8b
 python -m src.evaluation.summarize_runs
 ```
 
-`evaluate_hints` measures whether the hints improve repair accuracy. It copies the clean log, injects missing attribute values with known ground truth (currently the `missing_attribute_value` issue type), runs exploration, and repairs every detected violation twice: with and without hints. Both arms are scored against the ground truth (coverage, exact match, within 10 % for numbers, mean relative error, mean confidence).
+`evaluate_hints` measures whether the hints improve repair accuracy. It copies the clean log, injects missing attribute values with known ground truth (currently the `missing_attribute_value` issue type), runs examination, and repairs every detected violation twice: with and without hints. Both arms are scored against the ground truth (coverage, exact match, within 10 % for numbers, mean relative error, mean confidence).
 
 Each run is archived in `data/evaluation/runs/<timestamp>-<model>/`. `summarize_runs` aggregates all runs into `data/evaluation/summary.md`.
 
@@ -229,7 +229,7 @@ All logs are OCEL 2.0 SQLite files, stored with Git LFS.
 ```
 src/
   detection/                   rule-based detectors (detect_all)
-  exploration/                 exploration: profiling + LLM guide → hints
+  examination/                 examination: profiling + LLM guide → hints
   llm/                         LLM client, per-issue repair tasks, repair application
   order_management_corruption/ issue injectors used to build the synthetic log
   evaluation/                  hint evaluation (evaluate_hints, summarize_runs)
@@ -249,7 +249,7 @@ tests/                         pytest tests
 | Python ≥ 3.11 | everything | Developed and tested on macOS with Python 3.14. |
 | [Git LFS](https://git-lfs.com) | the datasets | Without it, `data/**/*.sqlite` are small pointer files, not databases. |
 | ~3.5 GB disk | all datasets | Synthetic logs only: ~35 MB (see [Installation](#installation)). |
-| [Ollama](https://ollama.com) + one model | LLM detection, repair, exploration, evaluation | Optional: rule-based detection works without it. An 8B model needs ~5 GB disk and ~8 GB RAM. |
+| [Ollama](https://ollama.com) + one model | LLM detection, repair, examination, evaluation | Optional: rule-based detection works without it. An 8B model needs ~5 GB disk and ~8 GB RAM. |
 
 ## Troubleshooting
 
@@ -258,6 +258,6 @@ tests/                         pytest tests
 | `sqlite3.DatabaseError: file is not a database` | The log is an LFS pointer. Install Git LFS and run `git lfs pull`. |
 | Dashboard: "LLMs not reachable" | Start Ollama (app or `ollama serve`). Check `OLLAMA_HOST`. |
 | *Model* dropdown shows `(none)` | No model pulled yet: `ollama pull qwen3:8b` (or any other model). |
-| Repair or exploration times out | Use a smaller or non-reasoning model, or a faster machine via `OLLAMA_HOST`. |
+| Repair or examination times out | Use a smaller or non-reasoning model, or a faster machine via `OLLAMA_HOST`. |
 | A bundled log was changed by *Apply* | `git checkout -- data/<path>.sqlite` |
 | `ModuleNotFoundError: No module named 'src'` | Run commands from the repository root with the virtual environment active. |

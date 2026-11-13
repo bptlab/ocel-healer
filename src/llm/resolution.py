@@ -39,7 +39,7 @@ def suggest_repair(
 ) -> dict:
     """Ask the LLM how to repair `row`. Returns an action dict (kind='noop' if unsure).
 
-    `use_hints=False` builds the context without exploration hints — used by
+    `use_hints=False` builds the context without examination hints — used by
     the evaluation to measure the hints' effect."""
     task = get_task(issue_key)
     if task is None:

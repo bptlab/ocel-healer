@@ -1,18 +1,18 @@
 # src/evaluation/evaluate_hints.py
 
-"""Measure whether exploration hints improve LLM repair accuracy.
+"""Measure whether examination hints improve LLM repair accuracy.
 
 Self-contained experiment:
   1. Copy the clean log and inject missing values with known groundtruth.
-  2. Run exploration on the corrupted copy (guide lands next to it, where
+  2. Run examination on the corrupted copy (guide lands next to it, where
      the repair tasks' hint lookup expects it).
   3. For every detected missing_attribute_value violation ask the repair
-     agent twice — with exploration hints (arm A) and without (arm B).
+     agent twice — with examination hints (arm A) and without (arm B).
   4. Score both arms against groundtruth: coverage, exact match, within-10%
      for numerics, mean relative error, mean confidence.
 
 Both arms see identical violations on the same database; the only variable
-is the presence of `exploration_hints` in the repair context.
+is the presence of `examination_hints` in the repair context.
 
 Usage:
     python -m src.evaluation.evaluate_hints --model mistral-small3.2:latest
@@ -30,7 +30,7 @@ from typing import Any
 
 from src.order_management_corruption._common import inject_missing_attribute_value
 from src.detection.error_detection import detect_all
-from src.exploration import explore_database
+from src.examination import examine_database
 from src.llm.client import set_active_model
 from src.llm.resolution import suggest_repair
 
@@ -234,7 +234,7 @@ def render_eval_report(meta: dict, records: list[dict]) -> str:
     sep = "|---|---|---|---|---|---|---|---|"
 
     lines = [
-        "# Exploration Hints Evaluation",
+        "# Examination Hints Evaluation",
         "",
         f"*Model:* `{meta['model']}` — *date:* {meta['date']} — *duration:* {meta['duration_s']:.0f}s",
         f"*Database:* `{meta['db_path']}` — *injected violations:* {meta['n_injected']}",
@@ -303,11 +303,11 @@ def main() -> None:
     db_path, groundtruth = prepare_eval_db(args.clean_db, run_dir)
     print(f"   {len(groundtruth)} values nulled in {db_path}", flush=True)
 
-    print("== running exploration ==", flush=True)
-    explore_database(
+    print("== running examination ==", flush=True)
+    examine_database(
         db_path,
         model=args.model,
-        base_dir=run_dir / "exploration",
+        base_dir=run_dir / "examination",
         on_progress=lambda name, i, total: print(f"   [{i}/{total}] {name}", flush=True),
     )
 

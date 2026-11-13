@@ -1,7 +1,7 @@
 """LLM detector for `missing_object_attribute`.
 
 Semantics — **expected-but-not-declared**. Given an object type, its
-already-declared columns, and cross-type context (the exploration guide's
+already-declared columns, and cross-type context (the examination guide's
 domain description + peer object types' schemas), the LLM proposes
 attribute names the schema is *missing*. An empty list means "no
 suggestions"; a non-empty list becomes N proposal cards in the drill-in,
@@ -21,7 +21,7 @@ from src.detection.error_detection import (
     _object_type_tables,
     _OCEL_RESERVED,
 )
-from src.exploration.hint_selector import all_type_summaries
+from src.examination.hint_selector import all_type_summaries
 from src.llm.actions import ActionResult
 from src.llm.schemas import SuggestedAttributesOutput
 from src.llm.tasks._base import DetectionResult, DetectionTask
@@ -85,7 +85,7 @@ class MissingObjectAttribute(DetectionTask):
         ctx["peer_types"] = peers
 
         if use_hints:
-            self._attach_exploration_hints(conn, ctx, row)
+            self._attach_examination_hints(conn, ctx, row)
         self.extend_context(conn, ctx, row)
         return ctx
 
@@ -103,7 +103,7 @@ class MissingObjectAttribute(DetectionTask):
                                            per-type sub-table (never re-suggest)
         - peer_types                       {type: [columns…]} for every OTHER
                                            object type in the log
-        - exploration_hints.all_object_types  compact overview of every type
+        - examination_hints.all_object_types  compact overview of every type
                                            (id template, "represents" note) so
                                            you know what the type is FOR
     """
@@ -114,7 +114,7 @@ class MissingObjectAttribute(DetectionTask):
         2. Compare against `peer_types`. Attributes that most peers have
            and this type lacks are strong candidates (e.g. every entity type
            has `created_at` but this one doesn't).
-        3. Cross-reference `exploration_hints.all_object_types[current_type].
+        3. Cross-reference `examination_hints.all_object_types[current_type].
            represents` for the type's business meaning. An Order without a
            monetary total, a Customer without contact info, a Product without
            a price are canonical omissions.
@@ -134,7 +134,7 @@ class MissingObjectAttribute(DetectionTask):
                         declared_attributes: ['customer_ref', 'created_at']}
         peer_types = {'product': ['sku', 'price', 'name'],
                       'customer': ['email', 'country']}
-        exploration_hints.all_object_types = {
+        examination_hints.all_object_types = {
           'order': {represents: 'A purchase order placed by a customer'},
           'product': {...}, 'customer': {...}}
         → {"suggested_attributes": [

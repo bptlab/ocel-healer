@@ -87,7 +87,7 @@ class IncorrectEventType(DetectionTask):
         if anchor_id:
             self._attach_anchor(conn, ctx, anchor_id, anchor_type)
         if use_hints:
-            self._attach_exploration_hints(conn, ctx, row)
+            self._attach_examination_hints(conn, ctx, row)
         self.extend_context(conn, ctx, row)
         return ctx
 

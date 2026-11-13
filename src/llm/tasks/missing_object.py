@@ -140,7 +140,7 @@ class MissingObject(ResolutionTask):
                 ctx["related_event"] = {"ocel_id": got[0], "ocel_type": got[1]}
 
         if use_hints:
-            self._attach_exploration_hints(conn, ctx, row)
+            self._attach_examination_hints(conn, ctx, row)
         self.extend_context(conn, ctx, row)
         return ctx
 
