@@ -111,7 +111,7 @@ PENDING_HTML = (
 # The clickable counters are marimo buttons rendered inside shadow roots;
 # src/dashboard.css (loaded via App(css_file=...)) strips their chrome.
 # Same badge without the `title` — used as a button label, where the
-# button's own tooltip carries the explanation.
+# cell's hover card carries the explanation.
 PENDING_LABEL_HTML = f'<span style="{_PENDING_BADGE_STYLE}">?</span>'
 # Cell that is intentionally not applicable (distinct from a blank/dash
 # cell whose detector merely hasn't been implemented yet). Used for
@@ -195,7 +195,9 @@ def build_cell_coverage(
     no sweep-based detector (rule-based cells are always complete).
 
     A type counts as scanned when ``sweep_result`` holds an entry for
-    ``(sqlite_path, issue_key, type)``. Only LLM keys contribute; rule keys
+    ``(sqlite_path, issue_key, type)`` from a sweep that was not aborted.
+    An aborted entry still contributes its proposals but leaves the type
+    unscanned. Only LLM keys contribute; rule keys
     in a mixed cell are ignored here because they always cover everything.
     """
     llm = [k for k in keys if k in llm_keys]
@@ -210,7 +212,7 @@ def build_cell_coverage(
                 "name": name,
                 "kind": kind,
                 "key": key,
-                "scanned": entry is not None,
+                "scanned": entry is not None and not entry.get("aborted"),
                 "proposed": int(entry["flagged_count"]) if entry else 0,
                 "confirmed": confirmed.get((key, name), 0),
             })
@@ -243,6 +245,7 @@ _COVERAGE_CSS = (
     "box-shadow:0 4px 12px rgba(31,35,40,0.15);}"
     ".oh-cov:hover .oh-pop{display:block;}"
     ".oh-cov.oh-right .oh-pop{left:auto; right:0; transform:none;}"
+    ".oh-cov.oh-up .oh-pop{top:auto; bottom:100%;}"
     "</style>"
 )
 
@@ -395,15 +398,6 @@ def overview_cell_label(spec: dict) -> str:
     return pill_html(spec["count"])
 
 
-def overview_cell_tooltip(spec: dict) -> str:
-    """Hover text of an interactive overview cell's button."""
-    where = f"{spec['row_label']} / {spec['col_label']}"
-    if spec["kind"] == "pending":
-        return f"{where}: LLM-based detector, not run yet for this log. Click to open."
-    n = spec["count"]
-    return f"{where}: {n:,} row(s) detected. Click to drill in, click again to close."
-
-
 def overview_legend_html() -> str:
     """Legend under the Issue Overview. Built from the same badge helpers as
     the table cells, so the two cannot drift apart. The dash (`DASH_HTML`,
@@ -411,6 +405,8 @@ def overview_legend_html() -> str:
     items = [
         (pill_html(1), "issues found"),
         (pill_html(0), "no issues found"),
+        (coverage_pill_html(1, {"state": "partial"}),
+         "LLM-based check, only some types scanned (x/y types)"),
         (PENDING_LABEL_HTML, "LLM-based check, not run yet for this log"),
         (NA_LABEL_HTML, "not applicable"),
     ]
@@ -584,7 +580,7 @@ def render_overview_table_html(
                 _content = pill_html(_spec["count"])
                 _n = _spec["count"]
                 _popover = simple_popover_html(
-                    f'{_n} {"issue" if _n == 1 else "issues"} · select to open'
+                    f'{_n} {"issue" if _n == 1 else "issues"} · click to open, click again to close'
                 )
             if _cov and _kind in ("pending", "count"):
                 _popover = coverage_popover_html(_cov)
@@ -594,8 +590,11 @@ def render_overview_table_html(
                 )
             if _popover:
                 # Hover card; flip it to open leftwards in the last columns
-                # so it stays inside the table.
+                # and upwards in the last row so it stays inside the table
+                # (the overflow-x wrapper clips below the last row).
                 _flip = " oh-right" if _c_idx >= len(cols_flat) - 3 else ""
+                if _r_idx == len(rows) - 1:
+                    _flip += " oh-up"
                 _td_class = f' class="oh-cov{_flip}"'
                 _content += _popover
             _row_cells.append(f'<td{_td_class} style="{_style}">{_content}</td>')

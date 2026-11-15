@@ -508,7 +508,7 @@ def examination_view(
     if not _report:
         _chip = dr.chip(
             "neutral", "No report yet",
-            title="Run examination once to give the repair agents log-specific context.",
+            title="Run examination once to give the LLM repairs log-specific context.",
         )
         _report_view = mo.Html("")
     elif _stale:
@@ -520,13 +520,13 @@ def examination_view(
     else:
         _chip = dr.chip(
             "ok", "Report up to date",
-            title="Repair agents receive hints from this report.",
+            title="LLM repairs receive hints from this report.",
         )
         _report_view = mo.Html(dr.details("Show Examination Report", mo.md(_report).text))
 
     _section_header = mo.Html(dr.render_section_header_html(
         "Examination",
-        "Run once per file so the repair agents have log-specific hints "
+        "Run once per file so the LLM repairs have log-specific hints "
         "(id semantics, attribute patterns).",
         right=_chip,
     ))
@@ -913,7 +913,6 @@ def overview_buttons(
         overview_button_index[_key] = len(_buttons)
         _buttons.append(mo.ui.button(
             label=dr.overview_cell_label(_spec),
-            tooltip=dr.overview_cell_tooltip(_spec),
             full_width=True,
             on_click=lambda _value, _issue=_spec["issue_key"]: _select(_issue),
         ))
@@ -1329,6 +1328,7 @@ def drill_llm_sweep_status(
                 "flagged_count": len(_proposals),
                 "chosen_type":   chosen_type,
                 "order":         _order,
+                "aborted":       _aborted,  # aborted types don't count as scanned
             }
             set_sweep_result(_all)
             # Show the "Judged N … → K proposed flag(s)" banner for exactly

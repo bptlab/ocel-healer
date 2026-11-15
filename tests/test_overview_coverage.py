@@ -128,16 +128,43 @@ def test_pending_cell_keeps_question_mark_and_lists_unscanned():
     assert "Not scanned yet · 0 of 3 event types" in html
 
 
-def test_rule_cell_has_no_popover():
+def test_rule_cell_has_simple_popover():
     html = _table(None)
-    assert 'class="oh-cov' not in html
+    assert "3 issues · click to open, click again to close" in html
     assert "types</span>" not in html
+    assert "proposed" not in html
+
+
+def test_aborted_type_not_scanned():
+    key = "missing_event_attribute"
+    result = {(PATH, key, "Order"): {**_entry(2), "aborted": True}}
+    cov = _coverage([key], result, {(PATH, key)})
+    assert cov["state"] == "partial"
+    assert cov["scanned"] == 0
+    by_name = {t["name"]: t for t in cov["types"]}
+    assert by_name["Order"]["scanned"] is False
+    assert by_name["Order"]["proposed"] == 2  # proposals still shown
+
+
+def test_last_row_opens_upwards():
+    spec = {"kind": "count", "count": 1, "row_label": "r", "col_label": "c",
+            "issue_key": "k", "coverage": None}
+    html = dr.render_overview_table_html(
+        rows=["Missing Data", "Incorrect Data"],
+        col_groups=[("Events", ["c"])],
+        cols_flat=["c"],
+        cell_meta={"0:0": spec, "1:0": spec},
+        selected_issue_key=None,
+    )
+    _first, _last = html.split("Incorrect Data", 1)
+    assert "oh-up" not in _first.split("</style>", 1)[1]
+    assert "oh-up" in _last
 
 
 def test_last_columns_open_leftwards():
     cov = _coverage(["missing_event_attribute"])
     html = _table(cov, kind="pending", count=None, n_cols=4)
-    assert html.count('class="oh-cov oh-right"') == 3  # last three of four columns
+    assert html.count('class="oh-cov oh-right') == 3  # last three of four columns
 
 
 def test_summary_line():
