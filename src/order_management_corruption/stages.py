@@ -2,9 +2,11 @@
 
 `corrupt_database` copies the clean SQLite to the destination and runs the
 selected corruption level. Each `_stage_*` function calls one injector per
-issue in a fixed order — new event/relation issues are appended to the
-existing object-side stage members so `easy` / `medium` / `hard` all
-grow at the same time.
+issue in a fixed order, sharing one `TargetPicker` so targets never overlap,
+and returns the collected `Injection` records.
+
+Transitional: event- and relation-side injectors still use the old
+signature and return nothing; they are not yet part of the record.
 """
 
 from __future__ import annotations
@@ -16,6 +18,8 @@ from typing import Callable
 from src.order_management_corruption._common import (
     DEFAULT_CLEAN_PATH,
     DEFAULT_FULL_PATH,
+    Injection,
+    TargetPicker,
     _default_dst_for_level,
     _remove_object_primary_key,
 )
@@ -40,9 +44,9 @@ from src.order_management_corruption.object_issues import (
     inject_incorrect_attribute_datatype_blob_in_role,
     inject_incorrect_attribute_datatype_string_in_order_price,
     inject_incorrect_attribute_datatype_string_in_weight,
-    inject_incorrect_object_type_case_variant_customers,
-    inject_incorrect_object_type_swap_item_to_product,
-    inject_incorrect_object_type_swap_order_to_employee,
+    inject_incorrect_object_type_item_to_product,
+    inject_incorrect_object_type_order_to_employee,
+    inject_incorrect_object_type_package_to_item,
     inject_missing_attribute_value_empty_string_role,
     inject_missing_attribute_value_null_order_price,
     inject_missing_attribute_value_null_product_weight,
@@ -93,20 +97,23 @@ def corrupt_database(
         )
     with sqlite3.connect(dst_path) as conn:
         _remove_object_primary_key(conn)
+        picker = TargetPicker(conn, seed=0, n=1)
+        injections: list[Injection] = []
         for stage in stages:
-            stage(conn)
+            injections += stage(conn, picker)
         conn.commit()
     return dst_path
 
 
-def _stage_easy(conn: sqlite3.Connection) -> None:
+def _stage_easy(conn: sqlite3.Connection, picker: TargetPicker) -> list[Injection]:
+    out: list[Injection] = []
     # Object-side
-    inject_duplicate_objects_on_ids_product(conn)   # duplicate_objects_on_ids first (uses PK-less object table)
-    inject_missing_object_type_null_employee(conn)  # then missing_object_type (on a disjoint id)
-    inject_missing_attribute_value_null_product_weight(conn)
-    inject_incorrect_object_type_swap_order_to_employee(conn)
-    inject_incorrect_attribute_datatype_string_in_weight(conn)
-    inject_duplicate_objects_on_attributes_clone_product(conn)
+    out += inject_duplicate_objects_on_ids_product(conn, picker)
+    out += inject_missing_object_type_null_employee(conn, picker)
+    out += inject_missing_attribute_value_null_product_weight(conn, picker)
+    out += inject_incorrect_object_type_order_to_employee(conn, picker)
+    out += inject_incorrect_attribute_datatype_string_in_weight(conn, picker)
+    out += inject_duplicate_objects_on_attributes_clone_product(conn, picker)
     inject_dangling_e2o_relationship_missing_object_easy(conn)
     inject_dangling_o2o_relationship_missing_source(conn)
     # Event-side (Missing Data row)
@@ -119,16 +126,18 @@ def _stage_easy(conn: sqlite3.Connection) -> None:
     inject_duplicate_o2o_relations_comprises_easy(conn)
     inject_o2o_self_loop_order_easy(conn)
     inject_duplicate_e2o_relations_order_easy(conn)
+    return out
 
 
-def _stage_medium(conn: sqlite3.Connection) -> None:
+def _stage_medium(conn: sqlite3.Connection, picker: TargetPicker) -> list[Injection]:
+    out: list[Injection] = []
     # Object-side
-    inject_duplicate_objects_on_ids_conflicting_types(conn)
-    inject_missing_object_type_empty_string_order(conn)
-    inject_missing_attribute_value_empty_string_role(conn)
-    inject_incorrect_object_type_swap_item_to_product(conn)
-    inject_incorrect_attribute_datatype_string_in_order_price(conn)
-    inject_duplicate_objects_on_attributes_clone_employee(conn)
+    out += inject_duplicate_objects_on_ids_conflicting_types(conn, picker)
+    out += inject_missing_object_type_empty_string_order(conn, picker)
+    out += inject_missing_attribute_value_empty_string_role(conn, picker)
+    out += inject_incorrect_object_type_item_to_product(conn, picker)
+    out += inject_incorrect_attribute_datatype_string_in_order_price(conn, picker)
+    out += inject_duplicate_objects_on_attributes_clone_employee(conn, picker)
     inject_dangling_e2o_relationship_missing_event(conn)
     inject_dangling_o2o_relationship_missing_target(conn)
     # Event-side (Missing Data row)
@@ -141,16 +150,18 @@ def _stage_medium(conn: sqlite3.Connection) -> None:
     inject_duplicate_o2o_relations_places_medium(conn)
     inject_o2o_self_loop_employee_medium(conn)
     inject_duplicate_e2o_relations_item_medium(conn)
+    return out
 
 
-def _stage_hard(conn: sqlite3.Connection) -> None:
+def _stage_hard(conn: sqlite3.Connection, picker: TargetPicker) -> list[Injection]:
+    out: list[Injection] = []
     # Object-side
-    inject_duplicate_objects_on_ids_triple_null_type(conn)
-    inject_missing_object_type_whitespace_product(conn)
-    inject_missing_attribute_value_null_order_price(conn)
-    inject_incorrect_object_type_case_variant_customers(conn)
-    inject_incorrect_attribute_datatype_blob_in_role(conn)
-    inject_duplicate_objects_on_attributes_clone_order_and_referenced(conn)
+    out += inject_duplicate_objects_on_ids_triple_null_type(conn, picker)
+    out += inject_missing_object_type_whitespace_product(conn, picker)
+    out += inject_missing_attribute_value_null_order_price(conn, picker)
+    out += inject_incorrect_object_type_package_to_item(conn, picker)
+    out += inject_incorrect_attribute_datatype_blob_in_role(conn, picker)
+    out += inject_duplicate_objects_on_attributes_clone_order_and_referenced(conn, picker)
     inject_dangling_e2o_relationship_missing_both(conn)
     inject_dangling_o2o_relationship_missing_both_typo(conn)
     # Event-side (Missing Data row)
@@ -163,9 +174,10 @@ def _stage_hard(conn: sqlite3.Connection) -> None:
     inject_duplicate_o2o_relations_sales_rep_hard(conn)
     inject_o2o_self_loop_product_hard(conn)
     inject_duplicate_e2o_relations_sales_person_hard(conn)
+    return out
 
 
-_LEVEL_STAGES: dict[str, list[Callable[[sqlite3.Connection], None]]] = {
+_LEVEL_STAGES: dict[str, list[Callable[[sqlite3.Connection, TargetPicker], list[Injection]]]] = {
     "easy":   [_stage_easy],
     "medium": [_stage_medium],
     "hard":   [_stage_hard],
