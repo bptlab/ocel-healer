@@ -41,9 +41,11 @@ RULE_DETECTORS = (
 # injectors don't yet produce event-attribute defects. Adding those
 # injectors would extend both this tuple and the coverage tests below.
 
-# Counts on the pristine clean DB.  Only `duplicate_objects_on_attributes` is
-# non-zero — OCEL change rows legitimately share (time, changed_field, value)
-# fingerprints, so the detector picks them up as attribute duplicates.
+# Counts on the pristine (enriched) clean DB.  Two detectors are non-zero:
+# `duplicate_objects_on_attributes` — OCEL change rows legitimately share
+# (time, changed_field, value) fingerprints; `duplicate_events_on_attributes`
+# — two pick item and two send package events coincide in time and resource
+# in the source log while touching different objects.
 CLEAN_BASELINE = {
     "missing_object_type":               0,
     "missing_attribute_value":           0,
@@ -55,7 +57,7 @@ CLEAN_BASELINE = {
     "duplicate_objects_on_ids":          0,
     "duplicate_objects_on_attributes":   384,
     "duplicate_events_on_ids":           0,
-    "duplicate_events_on_attributes":    0,
+    "duplicate_events_on_attributes":    2,
     "incorrect_attribute_datatype":      0,
     "incorrect_event_attribute_datatype": 0,
     "dangling_o2o_relationship":         0,
