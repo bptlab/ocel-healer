@@ -177,6 +177,14 @@ corrupt_database(DEFAULT_CLEAN_PATH, level="all")   # levels: legacy, easy, medi
 
 With `level="all"` this regenerates `data/synthetic/order-management-corrupted.sqlite`.
 
+The bundled baseline is the public Order Management log, **enriched with event attributes** derived from data already in it, so that the event-attribute issue types can be injected too. The script `python -m src.order_management_corruption.enrich_baseline` adds:
+
+- `resource`: the employee linked to the event (via `employee`, `sales person`, `packer` or `shipper`)
+- `item_count`: the number of items on *place order*
+- `amount`: the order's price on *pay order*
+
+It is idempotent.
+
 ### Exploration
 
 Before the LLM steps run on a log, the exploration step analyses it and produces knowledge that LLM detection and LLM repair receive as `exploration_hints`. It consists of a deterministic profile (schemas, null rates, id templates, value vocabularies, qualifier anomalies) and an LLM-written interpretation guide.
