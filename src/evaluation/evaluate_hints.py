@@ -28,7 +28,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from src.order_management_corruption._common import inject_missing_attribute_value
+from src.order_management_corruption._common import (
+    NUMERIC_TOLERANCE,
+    inject_missing_attribute_value,
+)
 from src.detection.error_detection import detect_all
 from src.exploration import explore_database
 from src.llm.client import set_active_model
@@ -47,9 +50,6 @@ INJECTIONS = [
     ("object_Employees", "role", 8),
     ("object_Packages", "weight", 8),
 ]
-
-NUMERIC_TOLERANCE = 0.10  # relative error counted as "within tolerance"
-
 
 # --- dataset preparation ----------------------------------------------------
 
