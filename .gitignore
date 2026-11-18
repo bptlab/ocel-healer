@@ -9,8 +9,8 @@ __pycache__/
 *dev.ipynb
 
 # Generated artifacts (recreated by running the tools)
-# - exploration reports, written next to each log
-data/**/exploration/
+# - examination reports, written next to each log
+data/**/examination/
 # - per-run outputs of src.evaluation.evaluate_hints / summarize_runs
 data/evaluation/runs/
 data/evaluation/summary.md

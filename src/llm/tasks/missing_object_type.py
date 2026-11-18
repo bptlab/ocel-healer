@@ -1,4 +1,4 @@
-from src.exploration.hint_selector import all_type_summaries
+from src.examination.hint_selector import all_type_summaries
 from src.llm.actions import ActionResult
 from src.llm.schemas import InferredTypeOutput
 from src.llm.tasks._base import ResolutionTask
@@ -33,7 +33,7 @@ class MissingObjectType(ResolutionTask):
         1. Read `violation.ocel_id` first — id keywords or human names are
            often the single strongest signal (e.g. "Alessandro Berti" → a
            person, `p-123456` → a package, `i-88001` → an item).
-           If `exploration_hints.all_object_types` is present, match the id
+           If `examination_hints.all_object_types` is present, match the id
            against each type's `id_template` (digit runs shown as `#`): a
            matching template is strong evidence for that type.
         2. Read the qualifiers in `events`. The qualifier names the ROLE

@@ -149,8 +149,8 @@ def test_sweep_returns_partial_results_on_abort(monkeypatch):
     assert calls == [1, 2, 3, 4]  # nothing judged after the abort
 
 
-def test_aborted_exploration_keeps_previous_guide(monkeypatch, tmp_path):
-    from src.exploration import explorer_agent, report_store
+def test_aborted_examination_keeps_previous_guide(monkeypatch, tmp_path):
+    from src.examination import examiner_agent, report_store
 
     src_db = Path("data/synthetic/order-management-baseline.sqlite")
     if src_db.stat().st_size < 1024:
@@ -165,9 +165,9 @@ def test_aborted_exploration_keeps_previous_guide(monkeypatch, tmp_path):
     def aborted_llm(*args, **kwargs):
         raise Cancelled()
 
-    monkeypatch.setattr(explorer_agent, "call_llm", aborted_llm)
+    monkeypatch.setattr(examiner_agent, "call_llm", aborted_llm)
     with pytest.raises(Cancelled):
-        explorer_agent.explore_database(db, model="any")
+        examiner_agent.examine_database(db, model="any")
 
     assert report_store.load_guide(db) == old_guide
     assert report_store.load_report(db) == "old report"

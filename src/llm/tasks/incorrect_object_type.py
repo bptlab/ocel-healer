@@ -1,4 +1,4 @@
-from src.exploration.hint_selector import all_type_summaries
+from src.examination.hint_selector import all_type_summaries
 from src.llm.schemas import InferredTypeOutput
 from src.llm.tasks._base import DetectionResult, DetectionTask
 
@@ -36,7 +36,7 @@ class IncorrectObjectType(DetectionTask):
                that contradicts the current type is STRONG on its own — do NOT
                downgrade it to "weak" just because events and attributes are
                sparse.
-             - If `exploration_hints.all_object_types` is present, match the id
+             - If `examination_hints.all_object_types` is present, match the id
                against each type's `id_template` (digit runs shown as `#`): an id
                matching another type's template is strong evidence for that type.
              - Event activities + qualifiers (e.g. `place_order` with qualifier

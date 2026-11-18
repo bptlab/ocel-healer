@@ -34,8 +34,8 @@ class MissingAttributeValue(ResolutionTask):
                                      and format
         - anchor_entity              summary of the anchor: id, name (when
                                      resolvable), object_type, missing_attribute
-        - exploration_hints          optional log-specific knowledge from the
-                                     exploration phase (observed value
+        - examination_hints          optional log-specific knowledge from the
+                                     examination phase (observed value
                                      vocabulary, repair hints, id semantics)
     """
 
@@ -45,18 +45,18 @@ class MissingAttributeValue(ResolutionTask):
         2. Look at the anchor's other attributes and events for
            correlations (country → currency, activity `pay_in_eur` →
            `EUR`, etc.).
-        3. If `exploration_hints` are present, follow them:
-           - `exploration_hints.attribute.known_values` are values this
+        3. If `examination_hints` are present, follow them:
+           - `examination_hints.attribute.known_values` are values this
              column is OBSERVED to take in this log (the list may be
              incomplete when many rows are missing). Strongly prefer
              returning one of them verbatim: map the evidence onto the
              closest listed value — e.g. known_values ["Gold", "Silver"]
              and the evidence says "silver tier" → answer "Silver".
-           - `exploration_hints.attribute.repair_hint` states the
+           - `examination_hints.attribute.repair_hint` states the
              log-specific way to infer this attribute;
              `domain_knowledge_applicable` tells you whether real-world
              knowledge may be used.
-           - If `exploration_hints.object_type.id_is_entity_name` is true,
+           - If `examination_hints.object_type.id_is_entity_name` is true,
              the anchor's ocel_id (also in `anchor_entity.name`) is the
              entity's real-world name — identify the entity and recall the
              factual attribute value from your knowledge.
@@ -96,9 +96,9 @@ class MissingAttributeValue(ResolutionTask):
             None,
         )
 
-        # When exploration established that this type's ocel_id carries the
+        # When examination established that this type's ocel_id carries the
         # entity's real-world name, surface it as the name for lookups.
-        hints = ctx.get("exploration_hints", {})
+        hints = ctx.get("examination_hints", {})
         if not name and hints.get("object_type", {}).get("id_is_entity_name"):
             name = str(anchor_id) if anchor_id else None
 

@@ -1,6 +1,6 @@
-# src/exploration/explorer_agent.py
+# src/examination/examiner_agent.py
 
-"""LLM Exploration Agent v2.
+"""LLM Examination Agent v2.
 
 Interprets the deterministic profile produced by db_profiler and writes a
 structured *guide* (JSON) plus a human-readable report (Markdown). Design
@@ -23,8 +23,8 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
-from src.exploration import report_store
-from src.exploration.db_profiler import profile_database
+from src.examination import report_store
+from src.examination.db_profiler import profile_database
 from src.llm.client import call_llm
 
 # v3: the guide carries only LLM interpretations; deterministic facts (id
@@ -36,8 +36,8 @@ GUIDE_VERSION = 3
 # host is down or the model too slow, every remaining call would fail the same way.
 ABORT_AFTER = 2
 
-EXPLORER_SYSTEM_PROMPT = """\
-You are a data analyst exploring an OCEL 2.0 event log (object-centric process data).
+EXAMINER_SYSTEM_PROMPT = """\
+You are a data analyst examining an OCEL 2.0 event log (object-centric process data).
 You receive DATABASE EVIDENCE that was extracted deterministically from the log —
 every name, count, and sample in it is verified ground truth.
 
@@ -109,7 +109,7 @@ def _qualifiers_touching_type(profile: dict, ocel_type: str) -> dict[str, int]:
 
 # --- section calls ------------------------------------------------------------
 
-def _explore_domain(profile: dict, model: str | None) -> dict[str, Any]:
+def _examine_domain(profile: dict, model: str | None) -> dict[str, Any]:
     evidence = {
         "object_types": profile["object_types"],
         "event_types": profile["event_types"],
@@ -136,7 +136,7 @@ Schema:
  "evidence": ["<up to 4 short bullets citing concrete evidence — real type/qualifier names>"],
  "confidence": "high|medium|low"}}
 """
-    payload = call_llm(prompt, system_prompt=EXPLORER_SYSTEM_PROMPT, model=model, timeout=180.0)
+    payload = call_llm(prompt, system_prompt=EXAMINER_SYSTEM_PROMPT, model=model, timeout=180.0)
     return {
         "process": _as_str(payload.get("process")),
         "evidence": _as_str_list(payload.get("evidence"), 4),
@@ -144,7 +144,7 @@ Schema:
     }
 
 
-def _explore_object_type(
+def _examine_object_type(
     profile: dict,
     ocel_type: str,
     table: str,
@@ -194,7 +194,7 @@ Schema:
    }}
  }}}}
 """
-    payload = call_llm(prompt, system_prompt=EXPLORER_SYSTEM_PROMPT, model=model, timeout=180.0)
+    payload = call_llm(prompt, system_prompt=EXAMINER_SYSTEM_PROMPT, model=model, timeout=180.0)
 
     raw_attrs = payload.get("attributes")
     raw_attrs = raw_attrs if isinstance(raw_attrs, dict) else {}
@@ -222,7 +222,7 @@ Schema:
     }
 
 
-def _explore_qualifiers(profile: dict, domain_process: str, model: str | None,
+def _examine_qualifiers(profile: dict, domain_process: str, model: str | None,
                         warnings: list[str]) -> dict[str, str]:
     known = [
         q["qualifier"]
@@ -258,7 +258,7 @@ Describe EVERY qualifier in this list and no others: {known}
 Schema:
 {{"qualifiers": {{"<qualifier>": "<one sentence: role of the linked object>"}}}}
 """
-    payload = call_llm(prompt, system_prompt=EXPLORER_SYSTEM_PROMPT, model=model, timeout=180.0)
+    payload = call_llm(prompt, system_prompt=EXAMINER_SYSTEM_PROMPT, model=model, timeout=180.0)
     raw = payload.get("qualifiers")
     raw = raw if isinstance(raw, dict) else {}
     unknown = set(raw) - set(known)
@@ -275,10 +275,10 @@ def build_guide(
     model: str | None = None,
     on_progress: ProgressFn | None = None,
 ) -> dict[str, Any]:
-    """Run all exploration sections over a profile and assemble the guide.
+    """Run all examination sections over a profile and assemble the guide.
 
     Section failures are recorded in guide["warnings"] and leave that section
-    empty — one bad LLM call never sinks the whole exploration.
+    empty — one bad LLM call never sinks the whole examination.
     """
     warnings: list[str] = []
     typed = list(profile.get("type_tables", {}).items())
@@ -313,7 +313,7 @@ def build_guide(
                     "aborted remaining LLM sections after "
                     f"{ABORT_AFTER} consecutive failures — check that the LLM host "
                     "is reachable and the model answers within the timeout "
-                    "(reasoning-heavy models may be too slow), then re-run exploration"
+                    "(reasoning-heavy models may be too slow), then re-run examination"
                 )
             return None
         failures_in_a_row = 0
@@ -331,15 +331,15 @@ def build_guide(
     }
 
     _tick("domain hypothesis")
-    domain = _llm_section("domain exploration", lambda: _explore_domain(profile, model))
+    domain = _llm_section("domain examination", lambda: _examine_domain(profile, model))
     if domain is not None:
         guide["domain"] = domain
 
     for ocel_type, table in typed:
         _tick(f"object type: {ocel_type}")
         section = _llm_section(
-            f"object type {ocel_type!r} exploration",
-            lambda t=ocel_type, tb=table: _explore_object_type(
+            f"object type {ocel_type!r} examination",
+            lambda t=ocel_type, tb=table: _examine_object_type(
                 profile, t, tb, guide["domain"]["process"], model, warnings
             ),
         )
@@ -348,8 +348,8 @@ def build_guide(
 
     _tick("qualifier semantics")
     qualifiers = _llm_section(
-        "qualifier exploration",
-        lambda: _explore_qualifiers(profile, guide["domain"]["process"], model, warnings),
+        "qualifier examination",
+        lambda: _examine_qualifiers(profile, guide["domain"]["process"], model, warnings),
     )
     if qualifiers is not None:
         guide["qualifiers"] = qualifiers
@@ -358,7 +358,7 @@ def build_guide(
 
 
 def render_report(profile: dict, guide: dict) -> str:
-    """Render exploration results as a compact human-readable Markdown report.
+    """Render examination results as a compact human-readable Markdown report.
 
     Facts (id templates, null rates, vocabularies, anomalies) come from the
     profile; interpretations (process, meanings, repair hints) from the guide.
@@ -366,7 +366,7 @@ def render_report(profile: dict, guide: dict) -> str:
     """
     d = guide["domain"]
     lines = [
-        "# OCEL Exploration Report",
+        "# OCEL Examination Report",
         "",
         f"*Database:* `{guide['db_path']}` — *model:* `{guide.get('model') or 'default'}`",
         "",
@@ -445,7 +445,7 @@ def render_report(profile: dict, guide: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def explore_database(
+def examine_database(
     db_path: str | Path,
     *,
     model: str | None = None,
@@ -454,8 +454,8 @@ def explore_database(
 ) -> Path:
     """Full pipeline: profile → guide → report. Returns the report path.
 
-    Writes exploration_profile.json, exploration_guide.json and
-    exploration_report.md into <db_dir>/exploration/<db_stem>/ (or <base_dir>/<db_stem>/).
+    Writes examination_profile.json, examination_guide.json and
+    examination_report.md into <db_dir>/examination/<db_stem>/ (or <base_dir>/<db_stem>/).
 
     If the run is aborted (`src.llm.cancel.Cancelled` propagates out of the
     LLM sections), only the deterministic profile has been written — the
@@ -475,7 +475,7 @@ def explore_database(
     previous_has_content = bool(previous and previous.get("object_types"))
     if not has_llm_content and previous_has_content:
         raise RuntimeError(
-            "exploration produced no LLM content — kept the previous guide. "
+            "examination produced no LLM content — kept the previous guide. "
             + (guide["warnings"][-1] if guide["warnings"] else "")
         )
 

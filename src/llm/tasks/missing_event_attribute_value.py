@@ -35,8 +35,8 @@ class MissingEventAttributeValue(ResolutionTask):
         - peer_objects              up to 5 peer events of the same type,
                                     full attribute rows — the pattern here
                                     tells you the typical shape and format
-        - exploration_hints         optional log-specific knowledge from
-                                    the exploration phase
+        - examination_hints         optional log-specific knowledge from
+                                    the examination phase
     """
 
     METHOD = """
@@ -44,7 +44,7 @@ class MissingEventAttributeValue(ResolutionTask):
            casing, and format. Match them.
         2. Look at the anchor event's other attributes for correlations
            (activity name → typical author, etc.).
-        3. If `exploration_hints` are present, follow them (see the
+        3. If `examination_hints` are present, follow them (see the
            object-side task for the full protocol).
         4. Never return null. If evidence is weak, still return your best
            concrete guess and lower `confidence` accordingly.

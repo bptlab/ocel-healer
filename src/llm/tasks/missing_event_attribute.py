@@ -4,8 +4,8 @@ Event-side counterpart of `missing_object_attribute`. Given an event
 type, its already-declared columns, and every peer event type's schema,
 the LLM proposes attribute names the schema ought to carry but doesn't.
 
-Note: the exploration guide currently has no `event_types` section
-(see `src/exploration/explorer_agent.py` — only `object_types` gets an
+Note: the examination guide currently has no `event_types` section
+(see `src/examination/examiner_agent.py` — only `object_types` gets an
 LLM-produced description). We therefore feed the model just SQL-derived
 schema info plus peer event schemas. This is enough for common misses
 (a "Ship Order" event without `shipping_address`, a "Pay Order" event
@@ -77,7 +77,7 @@ class MissingEventAttribute(DetectionTask):
             # Best-effort — the guide has no event_types section today, so
             # this attaches (at most) qualifier context. Not required for
             # the task to succeed.
-            self._attach_exploration_hints(conn, ctx, row)
+            self._attach_examination_hints(conn, ctx, row)
         self.extend_context(conn, ctx, row)
         return ctx
 

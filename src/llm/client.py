@@ -56,7 +56,7 @@ def _post_chat(
     """Send one chat-completions request; return the raw assistant text.
 
     Defaults preserve the repair-agent behaviour (active model, 60s timeout).
-    The exploration agent passes its own model/timeout."""
+    The examination agent passes its own model/timeout."""
     body = json.dumps({
         "model": model or _active_model,
         "messages": messages,
@@ -186,7 +186,7 @@ def call_llm(
     """One JSON-mode call without schema validation. Returns the parsed dict.
 
     The repair path prefers `call_task` (validated + retry); this entry point
-    serves the exploration agent, which passes its own system_prompt, model
+    serves the examination agent, which passes its own system_prompt, model
     and a longer timeout for the big guide-building prompts.
     """
     raw = _post_chat(

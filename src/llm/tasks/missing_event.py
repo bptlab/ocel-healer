@@ -160,7 +160,7 @@ class MissingEvent(ResolutionTask):
                 ctx["object_events"] = enriched
 
         if use_hints:
-            self._attach_exploration_hints(conn, ctx, row)
+            self._attach_examination_hints(conn, ctx, row)
         self.extend_context(conn, ctx, row)
         return ctx
 

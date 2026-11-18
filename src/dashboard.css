@@ -74,5 +74,5 @@
 .dh-details-body .prose { max-width: none; }
 
 /* marimo's floating page outline (right edge) only lists real <h1>-<h3>
-   elements, i.e. the markdown exploration report; hide it. */
+   elements, i.e. the markdown examination report; hide it. */
 #App > div > div > div.fixed.right-8 { display: none !important; }
