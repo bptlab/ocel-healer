@@ -1,575 +1,251 @@
 """Event-side corruption injectors.
 
 Covers issues rooted in the `event` table and its per-type sub-tables:
-E2O rows referencing non-existent events (`missing_event`), `event.ocel_type`
+deleted events whose E2O rows survive (`missing_event`), `event.ocel_type`
 values that are NULL / empty / whitespace (`missing_event_type`), and
 NULL / empty `ocel_time` values on `event_<Type>` rows
 (`missing_event_timestamp`).
 
-Each `inject_*` function introduces exactly one flavor and returns the
-affected id(s) so callers can log or reference them.
+Each `inject_<issue_key>_<flavor>(conn, picker)` corrupts `picker.n`
+seeded, non-overlapping targets and returns one `Injection` per target
+(never an empty list — the picker raises instead). `EVENT_INJECTORS`
+maps ``(issue_key, tier)`` to the injector.
+
+Time repairs are scored against a window bracketed by the other events
+on the event's anchor object (the order, item or package it is about):
+`lo` is the latest earlier event, `hi` the earliest later one, either may
+be None. Targets are only drawn from events with at least one such
+neighbour, so every window is bounded on at least one side.
 """
 
 from __future__ import annotations
 
 import sqlite3
+from typing import Callable
 
-from src.order_management_corruption._common import _capture_and_update
-from .om_schema import (
-    get_om_event_table,
-    get_om_event_type,
-    get_om_object_type,
-    get_om_e2o_qualifier,
+from src.order_management_corruption._common import (
+    Injection,
+    TargetPicker,
+    _capture_and_update,
+    _delete_event_fully,
+    _type_table,
 )
 
-
-# ---------------------------------------------------------------------------
-# missing_event_timestamp — a row in `event_<Type>` has NULL or empty
-# ocel_time. Rule detector via UNION over event sub-tables; LLM resolver
-# interpolates from neighbor events touching the same object(s).
-# ---------------------------------------------------------------------------
+# Cap on E2O rows per deleted event, so a missing_event cascade stays a
+# handful of rows (place order reaches 27, failed delivery 36).
+MAX_EVENT_FANOUT = 12
 
 
-def _pick_event_with_relations(
-    conn: sqlite3.Connection, table: str, *, require_neighbor: bool = False
-) -> str | None:
-    """Pick an `ocel_id` from `table` that's actually resolvable, instead of
-    blindly grabbing the first row.
-
-    Without this, `SELECT ocel_id FROM {table} LIMIT 1` (no ORDER BY, no
-    relational check) deterministically returns whichever row SQLite
-    happens to store first -- which can easily be an event with zero
-    `event_object` rows at all, making the resulting "infer the missing
-    timestamp from neighbor events" task impossible by construction, not
-    merely hard.
-
-    `require_neighbor=True` (used for "easy") additionally requires at
-    least one OTHER event to share an object with the candidate, so the
-    tier's own premise -- "clear bracketing signal" -- actually holds.
-    "medium"/"hard" only require the event isn't fully orphaned, preserving
-    their intended sparse-signal difficulty rather than guaranteeing a
-    clean bracket.
-    """
-    if require_neighbor:
-        query = f"""
-            SELECT DISTINCT e.ocel_id
-            FROM "{table}" e
-            JOIN event_object eo ON eo.ocel_event_id = e.ocel_id
-            JOIN event_object eo2
-                ON eo2.ocel_object_id = eo.ocel_object_id
-               AND eo2.ocel_event_id != e.ocel_id
-            LIMIT 1
-        """
-    else:
-        query = f"""
-            SELECT e.ocel_id
-            FROM "{table}" e
-            WHERE EXISTS (
-                SELECT 1 FROM event_object eo WHERE eo.ocel_event_id = e.ocel_id
-            )
-            LIMIT 1
-        """
-    row = conn.execute(query).fetchone()
+def _event_time(conn: sqlite3.Connection, event_id: str) -> str | None:
+    row = conn.execute("SELECT ocel_type FROM event WHERE ocel_id = ?", (event_id,)).fetchone()
+    table = _type_table(conn, "event", row[0]) if row else None
+    if table is None:
+        return None
+    row = conn.execute(f'SELECT ocel_time FROM "{table}" WHERE ocel_id = ?', (event_id,)).fetchone()
     return row[0] if row else None
 
 
-def inject_missing_event_timestamp_null_place_order_easy(conn: sqlite3.Connection) -> dict | None:
-    """missing_event_timestamp Easy: NULL the ocel_time on one `event_PlaceOrder` row.
-
-    Easy because `place order` is the first event in the lifecycle, so its
-    neighbors are all upper bounds — the resolver has a clear "must be
-    before X" signal from the order's later events. The candidate is
-    required to actually have such a neighbor (see
-    `_pick_event_with_relations`) so that promise holds in practice.
-    """
-    table = get_om_event_table("event_PlaceOrder")
-    ocel_id = _pick_event_with_relations(conn, table, require_neighbor=True)
-    if ocel_id is None:
-        return None
-    old_value = _capture_and_update(conn, table, "ocel_time", ocel_id, None)
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
+def _anchor(conn: sqlite3.Connection, event_id: str, qualifier: str) -> str:
+    return conn.execute(
+        "SELECT ocel_object_id FROM event_object WHERE ocel_event_id = ? AND ocel_qualifier = ?",
+        (event_id, qualifier),
+    ).fetchone()[0]
 
 
-def inject_missing_event_timestamp_empty_pick_item_medium(conn: sqlite3.Connection) -> dict | None:
-    """missing_event_timestamp Medium: Empty-string ocel_time on one `event_PickItem` row.
-
-    Medium because empty-string trips the detector but a naive `IS NULL`
-    filter misses it, and `pick item` sits deep in the lifecycle with
-    tighter bracketing constraints from both sides. The candidate is only
-    required to have SOME relation (not fully orphaned) — sparser than
-    "easy"'s guaranteed neighbor, on purpose.
-    """
-    table = get_om_event_table("event_PickItem")
-    ocel_id = _pick_event_with_relations(conn, table, require_neighbor=False)
-    if ocel_id is None:
-        return None
-    old_value = _capture_and_update(conn, table, "ocel_time", ocel_id, "")
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
-
-
-def inject_missing_event_timestamp_null_item_out_of_stock_hard(conn: sqlite3.Connection) -> dict | None:
-    """missing_event_timestamp Hard: NULL the ocel_time on one `event_ItemOutOfStock` row.
-
-    Hard because `item out of stock` is a rare, off-happy-path event with
-    sparse peer signal — bracketing must come from the item's own history
-    rather than a typical order lifecycle. Still requires at least one
-    `event_object` relation to exist so the task is merely hard, not
-    unsolvable: a fully orphaned event isn't a harder reasoning case, it's
-    a degenerate one no method could bracket.
-    """
-    table = get_om_event_table("event_ItemOutOfStock")
-    ocel_id = _pick_event_with_relations(conn, table, require_neighbor=False)
-    if ocel_id is None:
-        return None
-    old_value = _capture_and_update(conn, table, "ocel_time", ocel_id, None)
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
-
-
-# ---------------------------------------------------------------------------
-# missing_event — an event_object row references an event id that has no
-# row in the `event` table. Rule detector via LEFT JOIN; resolver INSERTs
-# the event row (plus an initial-state row in the per-type sub-table).
-# ---------------------------------------------------------------------------
-
-
-def inject_missing_event_place_order_easy(conn: sqlite3.Connection) -> dict | None:
-    """Missing event, Easy: delete a real 'place order' event that is still
-    referenced by its E2O row (qualifier `order`), leaving that row dangling.
-
-    Easy because `place order` is the first event in the lifecycle, so the
-    linked order object is still intact, and the surviving E2O qualifier
-    gives a clear signal for what event type belongs there.
-    """
-    place_type = get_om_event_type("place order")
-    order_qual = get_om_e2o_qualifier("order")
-    row = conn.execute(
-        "SELECT e.ocel_id, e.ocel_type FROM event e "
-        "JOIN event_object eo ON eo.ocel_event_id = e.ocel_id "
-        "WHERE e.ocel_type = ? AND eo.ocel_qualifier = ? LIMIT 1",
-        (place_type, order_qual),
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id, ocel_type = row
-    conn.execute("DELETE FROM event WHERE ocel_id = ?", (ocel_id,))
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: ocel_type}}
-
-
-def inject_missing_event_pick_item_medium(conn: sqlite3.Connection) -> dict | None:
-    """Missing event, Medium: delete a real 'pick item' event that is still
-    referenced by its E2O row (qualifier `item`), leaving that row dangling.
-
-    Medium because `pick item` sits mid-lifecycle — the resolver must
-    interpolate a plausible timestamp from bracketing neighbors, not just
-    read it off a single anchor.
-    """
-    pick_type = get_om_event_type("pick item")
-    item_qual = get_om_e2o_qualifier("item")
-    row = conn.execute(
-        "SELECT e.ocel_id, e.ocel_type FROM event e "
-        "JOIN event_object eo ON eo.ocel_event_id = e.ocel_id "
-        "WHERE e.ocel_type = ? AND eo.ocel_qualifier = ? LIMIT 1",
-        (pick_type, item_qual),
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id, ocel_type = row
-    conn.execute("DELETE FROM event WHERE ocel_id = ?", (ocel_id,))
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: ocel_type}}
-
-
-def inject_missing_event_bare_id_hard(conn: sqlite3.Connection) -> dict | None:
-    """Missing event, Hard: delete a real event still referenced by an E2O
-    row with qualifier `packer`, leaving that row dangling.
-
-    Hard because the surviving E2O row carries no `<type>:` id hint once the
-    event is gone — the resolver must infer the event type purely from the
-    qualifier and the linked object's type (here, a `package`).
-    """
-    obj_type = get_om_object_type("packages")
-    qualifier = get_om_e2o_qualifier("packer")
-    row = conn.execute(
-        "SELECT e.ocel_id, e.ocel_type FROM event e "
-        "JOIN event_object eo ON eo.ocel_event_id = e.ocel_id "
-        "JOIN object o ON o.ocel_id = eo.ocel_object_id "
-        "WHERE o.ocel_type = ? AND eo.ocel_qualifier = ? LIMIT 1",
-        (obj_type, qualifier),
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id, ocel_type = row
-    conn.execute("DELETE FROM event WHERE ocel_id = ?", (ocel_id,))
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: ocel_type}}
-
-
-# ---------------------------------------------------------------------------
-# missing_event_type — a row in `event` has NULL or empty ocel_type.
-# Rule detector; LLM resolver UPDATEs `event.ocel_type` from the objects
-# the event touches, its id, and its timestamp.
-# ---------------------------------------------------------------------------
-
-
-def inject_missing_event_type_null_confirm_easy(conn: sqlite3.Connection) -> str | None:
-    """Missing event type, Easy: NULL the ocel_type of one `confirm order` event.
-
-    Easy because the event's id embeds the activity keyword
-    (`confirm order:…`), giving the LLM a strong single-signal hint at
-    the type. Also linked to one `orders` object with qualifier `order`,
-    which corroborates.
-    """
-    event_type = get_om_event_type("confirm order")
-    row = conn.execute(
-        "SELECT ocel_id FROM event WHERE ocel_type = ? LIMIT 1", (event_type,)
-    ).fetchone()
-    if row is None:
-        return None
-    conn.execute("UPDATE event SET ocel_type = NULL WHERE ocel_id = ?", row)
-    return row[0]
-
-
-def inject_missing_event_type_empty_pay_medium(conn: sqlite3.Connection) -> str | None:
-    """Missing event type, Medium: Empty-string ocel_type on one `pay order` event.
-
-    Medium because empty-string trips the detector but a naive `IS NULL`
-    filter misses it. The id (`pay order:…`) and the linked `orders`
-    object give the LLM the signal to recover the type.
-    """
-    event_type = get_om_event_type("pay order")
-    row = conn.execute(
-        "SELECT ocel_id FROM event WHERE ocel_type = ? LIMIT 1", (event_type,)
-    ).fetchone()
-    if row is None:
-        return None
-    conn.execute("UPDATE event SET ocel_type = '' WHERE ocel_id = ?", row)
-    return row[0]
-
-
-def inject_missing_event_type_whitespace_package_hard(conn: sqlite3.Connection) -> str | None:
-    """Missing event type, Hard: Whitespace-only ocel_type on one `create
-    package` event.
-
-    Hard because whitespace passes `NOT NULL AND != ''` naive checks;
-    detection requires TRIM. Also because `create package` and
-    `send package` both touch package objects — the LLM must
-    disambiguate via the id keyword or the qualifier of the packer
-    object (`packer` for create, different for send).
-    """
-    event_type = get_om_event_type("create package")
-    row = conn.execute(
-        "SELECT ocel_id FROM event WHERE ocel_type = ? LIMIT 1", (event_type,)
-    ).fetchone()
-    if row is None:
-        return None
-    conn.execute("UPDATE event SET ocel_type = '   ' WHERE ocel_id = ?", row)
-    return row[0]
-
-
-# ---------------------------------------------------------------------------
-# missing_event_attribute_value (Easy/Hard)
-# ---------------------------------------------------------------------------
-
-
-def inject_missing_event_attribute_value_null_order_id_easy(conn: sqlite3.Connection) -> dict | None:
-    """missing_event_attribute_value Easy: NULL lifecycle attribute in event_PlaceOrder.
-
-    Easy because PlaceOrder is common and lifecycle is a standard attribute.
-    """
-    table = get_om_event_table("event_PlaceOrder")
-    row = conn.execute(
-        f"SELECT ocel_id FROM {table} LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    old_value = _capture_and_update(conn, table, "lifecycle", ocel_id, None)
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
-
-
-def inject_missing_event_attribute_value_null_reason_hard(conn: sqlite3.Connection) -> dict | None:
-    """missing_event_attribute_value Hard: NULL resource attribute in event_ItemOutOfStock.
-
-    Hard because ItemOutOfStock is rare and resource is a less obvious required field.
-    """
-    table = get_om_event_table("event_ItemOutOfStock")
-    row = conn.execute(
-        f"SELECT ocel_id FROM {table} LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    old_value = _capture_and_update(conn, table, "resource", ocel_id, None)
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
-
-
-# ---------------------------------------------------------------------------
-# incorrect_event_attribute_datatype (Easy/Hard)
-# ---------------------------------------------------------------------------
-
-
-def inject_incorrect_event_attribute_datatype_string_in_quantity_easy(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_event_attribute_datatype Easy: Put integer in resource text field.
-
-    Corrupts by putting numeric value in text field to test datatype validation.
-    """
-    table = get_om_event_table("event_PickItem")
-    row = conn.execute(
-        f"SELECT ocel_id FROM {table} LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    old_value = _capture_and_update(conn, table, "resource", ocel_id, 12345)
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
-
-
-def inject_incorrect_event_attribute_datatype_blob_in_activity_hard(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_event_attribute_datatype Hard: Put UTF-16-LE bytes in lifecycle text field.
-    """
-    table = get_om_event_table("event_PlaceOrder")
-    row = conn.execute(
-        f"SELECT ocel_id FROM {table} LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    # Put bytes in lifecycle field
-    old_value = _capture_and_update(
-        conn, table, "lifecycle", ocel_id, "complete".encode("utf-16-le")
-    )
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
-
-
-# ---------------------------------------------------------------------------
-# incorrect_event_attribute_value (Easy/Hard)
-# ---------------------------------------------------------------------------
-
-
-def inject_incorrect_event_attribute_value_negative_quantity_easy(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_event_attribute_value Easy: Invalid lifecycle value in PickItem.
-
-    Sets an invalid lifecycle state to test attribute validation.
-    """
-    table = get_om_event_table("event_PickItem")
-    row = conn.execute(
-        f"SELECT ocel_id FROM {table} LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    old_value = _capture_and_update(conn, table, "lifecycle", ocel_id, "invalid_state")
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
-
-
-def inject_incorrect_event_attribute_value_time_violation_hard(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_event_attribute_value Hard: ConfirmOrder before PlaceOrder (temporal violation).
-
-    Swaps the two events' ocel_time values, so both ids get an
-    original_values entry -- the correct repair swaps them back, not just
-    for the reported affected id but for its PlaceOrder counterpart too.
-    """
-    # Find a PlaceOrder and its corresponding ConfirmOrder
-    place_table = get_om_event_table("event_PlaceOrder")
-    confirm_table = get_om_event_table("event_ConfirmOrder")
-    qualifier = get_om_e2o_qualifier("order")
-
-    row = conn.execute(f"""
-        SELECT po.ocel_id as place_id, co.ocel_id as confirm_id, po.ocel_time, co.ocel_time
-        FROM {place_table} po
-        JOIN event_object eo1 ON po.ocel_id = eo1.ocel_event_id
-        JOIN event_object eo2 ON eo1.ocel_object_id = eo2.ocel_object_id AND eo2.ocel_qualifier = ?
-        JOIN {confirm_table} co ON eo2.ocel_event_id = co.ocel_id
-        LIMIT 1
-    """, (qualifier,)).fetchone()
-    if row is None:
-        return None
-    place_id, confirm_id, place_time, confirm_time = row
-    # Swap the times to create violation
-    conn.execute(
-        f"UPDATE {confirm_table} SET ocel_time = ? WHERE ocel_id = ?",
-        (place_time, confirm_id),
-    )
-    conn.execute(
-        f"UPDATE {place_table} SET ocel_time = ? WHERE ocel_id = ?",
-        (confirm_time, place_id),
-    )
+def _time_window(conn: sqlite3.Connection, event_id: str, anchor: str, time: str) -> dict:
+    """Repair rule for an event time: within the anchor object's neighbours."""
+    times = [
+        t for (eid,) in conn.execute(
+            "SELECT DISTINCT ocel_event_id FROM event_object "
+            "WHERE ocel_object_id = ? AND ocel_event_id != ?",
+            (anchor, event_id),
+        )
+        if isinstance(t := _event_time(conn, eid), str) and t.strip()
+    ]
     return {
-        "affected_ids": [confirm_id, place_id],
-        "original_values": {confirm_id: confirm_time, place_id: place_time},
+        "mode": "time_window", "value": time, "anchor": anchor,
+        "lo": max((t for t in times if t <= time), default=None),
+        "hi": min((t for t in times if t >= time), default=None),
     }
 
 
-# ---------------------------------------------------------------------------
-# incorrect_event_type (Easy/Hard)
-# ---------------------------------------------------------------------------
-
-
-def inject_incorrect_event_type_swap_easy(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_event_type Easy: Change PlaceOrder type to PickItem (completely wrong)."""
-    place_type = get_om_event_type("place order")
-    pick_type = get_om_event_type("pick item")
-    row = conn.execute(
-        "SELECT ocel_id FROM event WHERE ocel_type = ? LIMIT 1", (place_type,)
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    old_value = _capture_and_update(conn, "event", "ocel_type", ocel_id, pick_type)
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
-
-
-def inject_incorrect_event_type_case_variant_hard(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_event_type Hard: Change PlaceOrder to placeorder (case variant)."""
-    place_type = get_om_event_type("place order")
-    row = conn.execute(
-        "SELECT ocel_id FROM event WHERE ocel_type = ? LIMIT 1 OFFSET 1", (place_type,)
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    # Create case variant - lowercase version
-    old_value = _capture_and_update(
-        conn, "event", "ocel_type", ocel_id, "create purchase order"
-    )
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
+def _pick_with_neighbour(
+    picker: TargetPicker, ocel_type: str, qualifier: str, *, max_fanout: int | None = None,
+) -> list[str]:
+    """Events of `ocel_type` whose anchor (linked via `qualifier`) has at
+    least one other event, optionally with at most `max_fanout` E2O rows."""
+    sql = """
+        SELECT e.ocel_id FROM event e
+        JOIN event_object a ON a.ocel_event_id = e.ocel_id AND a.ocel_qualifier = ?
+        WHERE e.ocel_type = ?
+          AND EXISTS (SELECT 1 FROM event_object b
+                      WHERE b.ocel_object_id = a.ocel_object_id
+                        AND b.ocel_event_id != e.ocel_id)
+    """
+    params: tuple = (qualifier, ocel_type)
+    if max_fanout is not None:
+        sql += " AND (SELECT COUNT(*) FROM event_object c WHERE c.ocel_event_id = e.ocel_id) <= ?"
+        params += (max_fanout,)
+    ids = picker.pick(sql, params)
+    picker.touch(*(_anchor(picker.conn, eid, qualifier) for eid in ids))
+    return ids
 
 
 # ---------------------------------------------------------------------------
-# incorrect_event_time (Easy/Hard)
+# missing_event_timestamp (Easy/Medium/Hard)
 # ---------------------------------------------------------------------------
 
 
-def inject_incorrect_event_time_future_easy(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_event_time Easy: Set event time to year 2099."""
-    table = get_om_event_table("event_PlaceOrder")
-    row = conn.execute(
-        f"SELECT ocel_id FROM {table} LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    old_value = _capture_and_update(
-        conn, table, "ocel_time", ocel_id, "2099-01-01 00:00:00"
-    )
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
+def _missing_event_timestamp(
+    conn: sqlite3.Connection, picker: TargetPicker, *,
+    tier: str, flavor: str, ocel_type: str, qualifier: str, set_to: str | None,
+) -> list[Injection]:
+    table = _type_table(conn, "event", ocel_type)
+    # Windows first: two targets may share an anchor.
+    accepts = {
+        eid: _time_window(conn, eid, _anchor(conn, eid, qualifier), _event_time(conn, eid))
+        for eid in _pick_with_neighbour(picker, ocel_type, qualifier)
+    }
+    out = []
+    for eid, accept in accepts.items():
+        old = _capture_and_update(conn, table, "ocel_time", eid, set_to)
+        out.append(Injection(
+            "missing_event_timestamp", tier, flavor, "event_time", eid,
+            original={"event_type": ocel_type, "ocel_time": old},
+            corrupted=set_to,
+            expected_rows=[{"issue": "missing_event_timestamp", "ocel_id": eid}],
+            accept=accept,
+        ))
+    return out
 
 
-def inject_incorrect_event_time_past_hard(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_event_time Hard: Set event time to year 1900."""
-    table = get_om_event_table("event_ConfirmOrder")
-    row = conn.execute(
-        f"SELECT ocel_id FROM {table} LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    old_value = _capture_and_update(
-        conn, table, "ocel_time", ocel_id, "1900-01-01 00:00:00"
-    )
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
+def inject_missing_event_timestamp_null_place_order_easy(conn, picker):
+    """missing_event_timestamp Easy: NULL a place order's time. It opens the
+    order's lifecycle, so the order's later events give an upper bound."""
+    return _missing_event_timestamp(conn, picker, tier="easy", flavor="null_place_order",
+                                    ocel_type="place order", qualifier="order", set_to=None)
 
 
-# ---------------------------------------------------------------------------
-# duplicate_events_on_ids (Easy/Hard)
-# ---------------------------------------------------------------------------
+def inject_missing_event_timestamp_empty_pick_item_medium(conn, picker):
+    """missing_event_timestamp Medium: '' as a pick item's time. Empty string
+    slips past a naive IS NULL check; the item's events bracket it."""
+    return _missing_event_timestamp(conn, picker, tier="medium", flavor="empty_pick_item",
+                                    ocel_type="pick item", qualifier="item", set_to="")
 
 
-def inject_duplicate_events_on_ids_easy(conn: sqlite3.Connection) -> str | None:
-    """duplicate_events_on_ids Easy: Duplicate an event row identically."""
-    event_type = get_om_event_type("place order")
-    row = conn.execute(
-        "SELECT ocel_id, ocel_type FROM event WHERE ocel_type = ? LIMIT 1", (event_type,)
-    ).fetchone()
-    if row is None:
-        return None
-    conn.execute("INSERT INTO event VALUES (?, ?)", row)
-    return row[0]
-
-
-def inject_duplicate_events_on_ids_conflicting_types_hard(conn: sqlite3.Connection) -> str | None:
-    """duplicate_events_on_ids Hard: Duplicate event with conflicting type."""
-    place_type = get_om_event_type("place order")
-    pick_type = get_om_event_type("pick item")
-    row = conn.execute(
-        "SELECT ocel_id FROM event WHERE ocel_type = ? LIMIT 1 OFFSET 2", (place_type,)
-    ).fetchone()
-    if row is None:
-        return None
-    # Insert duplicate with different type
-    conn.execute("INSERT INTO event VALUES (?, ?)", (row[0], pick_type))
-    return row[0]
+def inject_missing_event_timestamp_null_item_out_of_stock_hard(conn, picker):
+    """missing_event_timestamp Hard: NULL an item out of stock's time. A rare,
+    off-happy-path event bracketed only by its item's own history."""
+    return _missing_event_timestamp(conn, picker, tier="hard", flavor="null_item_out_of_stock",
+                                    ocel_type="item out of stock", qualifier="item", set_to=None)
 
 
 # ---------------------------------------------------------------------------
-# duplicate_events_on_attributes (Easy/Hard)
+# missing_event (Easy/Medium/Hard) — the event and its event_<Type> row are
+# deleted; its E2O rows survive and trip both `missing_event` and
+# `dangling_e2o_relationship` (missing_side = event).
 # ---------------------------------------------------------------------------
 
 
-def inject_duplicate_events_on_attributes_clone_easy(conn: sqlite3.Connection) -> str | None:
-    """duplicate_events_on_attributes Easy: Clone a PlaceOrder event."""
-    event_type = get_om_event_type("place order")
-    table = get_om_event_table("event_PlaceOrder")
-    row = conn.execute(f"""
-        SELECT ocel_id, ocel_time
-        FROM {table}
-        LIMIT 1
-    """).fetchone()
-    if row is None:
-        return None
-    orig_id, time = row
-    clone_id = f"{orig_id}-CLONE"
-    # Insert into event table
-    conn.execute("INSERT INTO event VALUES (?, ?)", (clone_id, event_type))
-    # Insert into event_PlaceOrder
-    conn.execute(
-        f"INSERT INTO {table} (ocel_id, ocel_time) VALUES (?, ?)",
-        (clone_id, time),
-    )
-    return clone_id
+def _missing_event(
+    conn: sqlite3.Connection, picker: TargetPicker, *,
+    tier: str, flavor: str, ocel_type: str, qualifier: str,
+) -> list[Injection]:
+    # Windows first: two targets may share an anchor.
+    accepts = {
+        eid: {**_time_window(conn, eid, _anchor(conn, eid, qualifier), _event_time(conn, eid)),
+              "ocel_type": ocel_type}
+        for eid in _pick_with_neighbour(picker, ocel_type, qualifier, max_fanout=MAX_EVENT_FANOUT)
+    }
+    out = []
+    for eid, accept in accepts.items():
+        removed = _delete_event_fully(conn, eid)
+        expected = []
+        for r in removed["e2o"]:
+            rel = {"ocel_event_id": eid, "ocel_object_id": r["ocel_object_id"],
+                   "ocel_qualifier": r["ocel_qualifier"]}
+            expected.append({"issue": "missing_event", **rel})
+            expected.append({"issue": "dangling_e2o_relationship", **rel, "missing_side": "event"})
+        out.append(Injection(
+            "missing_event", tier, flavor, "event", eid,
+            original=removed, corrupted=None,
+            expected_rows=expected, accept=accept,
+        ))
+    return out
 
 
-def inject_duplicate_events_on_attributes_clone_with_refs_hard(conn: sqlite3.Connection) -> str | None:
-    """duplicate_events_on_attributes Hard: Clone event AND its event_object refs."""
-    event_type = get_om_event_type("place order")
-    table = get_om_event_table("event_PlaceOrder")
-    row = conn.execute(f"""
-        SELECT ocel_id, ocel_time
-        FROM {table}
-        LIMIT 1 OFFSET 1
-    """).fetchone()
-    if row is None:
-        return None
-    orig_id, time = row
-    clone_id = f"{orig_id}-CLONE"
-    # Insert into event table
-    conn.execute("INSERT INTO event VALUES (?, ?)", (clone_id, event_type))
-    # Insert into event_PlaceOrder
-    conn.execute(
-        f"INSERT INTO {table} (ocel_id, ocel_time) VALUES (?, ?)",
-        (clone_id, time),
-    )
-    # Clone event_object refs
-    conn.execute(
-        "INSERT INTO event_object (ocel_event_id, ocel_object_id, ocel_qualifier) "
-        "SELECT ?, ocel_object_id, ocel_qualifier FROM event_object WHERE ocel_event_id = ?",
-        (clone_id, orig_id),
-    )
-    return clone_id
+def inject_missing_event_place_order_easy(conn, picker):
+    """missing_event Easy: delete a place order. Its id and the surviving
+    customer/order links make type and (first-in-lifecycle) time obvious."""
+    return _missing_event(conn, picker, tier="easy", flavor="place_order",
+                          ocel_type="place order", qualifier="order")
+
+
+def inject_missing_event_pick_item_medium(conn, picker):
+    """missing_event Medium: delete a pick item. Mid-lifecycle, so the time
+    must be interpolated between the item's neighbouring events."""
+    return _missing_event(conn, picker, tier="medium", flavor="pick_item",
+                          ocel_type="pick item", qualifier="item")
+
+
+def inject_missing_event_failed_delivery_hard(conn, picker):
+    """missing_event Hard: delete a failed delivery. The rarest event type;
+    its `shipped package` link is shared with send package and package
+    delivered, so the type must be told apart from the package's history."""
+    return _missing_event(conn, picker, tier="hard", flavor="failed_delivery",
+                          ocel_type="failed delivery", qualifier="shipped package")
 
 
 # ---------------------------------------------------------------------------
-# missing_event_attribute (Easy/Hard)
+# missing_event_type (Easy/Medium/Hard)
 # ---------------------------------------------------------------------------
 
 
-def inject_missing_event_attribute_drop_order_id_easy(conn: sqlite3.Connection) -> str | None:
-    """missing_event_attribute Easy: Drop order_id column from event_PlaceOrder.
+def _missing_event_type(
+    conn: sqlite3.Connection, picker: TargetPicker, *,
+    tier: str, flavor: str, ocel_type: str, set_to: str | None,
+) -> list[Injection]:
+    out = []
+    for eid in picker.pick("SELECT ocel_id FROM event WHERE ocel_type = ?", (ocel_type,)):
+        old = _capture_and_update(conn, "event", "ocel_type", eid, set_to)
+        out.append(Injection(
+            "missing_event_type", tier, flavor, "event", eid,
+            original=old, corrupted=set_to,
+            expected_rows=[{"issue": "missing_event_type", "ocel_id": eid}],
+            accept={"mode": "exact", "value": old},
+        ))
+    return out
 
-    Schema changes not supported - returns None."""
-    return None
+
+def inject_missing_event_type_null_confirm_easy(conn, picker):
+    """missing_event_type Easy: NULL a confirm order's type; the id and the
+    `sales person` link point straight at it."""
+    return _missing_event_type(conn, picker, tier="easy", flavor="null_confirm",
+                               ocel_type="confirm order", set_to=None)
 
 
-def inject_missing_event_attribute_drop_optional_hard(conn: sqlite3.Connection) -> str | None:
-    """missing_event_attribute Hard: Drop optional column from event table.
+def inject_missing_event_type_empty_pay_medium(conn, picker):
+    """missing_event_type Medium: '' as a pay order's type; slips past a
+    naive IS NULL check."""
+    return _missing_event_type(conn, picker, tier="medium", flavor="empty_pay",
+                               ocel_type="pay order", set_to="")
 
-    Schema changes not supported - returns None."""
-    return None
+
+def inject_missing_event_type_whitespace_package_hard(conn, picker):
+    """missing_event_type Hard: whitespace as a create package's type; needs
+    TRIM to detect, and must be told apart from the other package events."""
+    return _missing_event_type(conn, picker, tier="hard", flavor="whitespace_package",
+                               ocel_type="create package", set_to="   ")
+
+
+EVENT_INJECTORS: dict[tuple[str, str], Callable[[sqlite3.Connection, TargetPicker], list[Injection]]] = {
+    ("missing_event_timestamp", "easy"):   inject_missing_event_timestamp_null_place_order_easy,
+    ("missing_event_timestamp", "medium"): inject_missing_event_timestamp_empty_pick_item_medium,
+    ("missing_event_timestamp", "hard"):   inject_missing_event_timestamp_null_item_out_of_stock_hard,
+    ("missing_event", "easy"):             inject_missing_event_place_order_easy,
+    ("missing_event", "medium"):           inject_missing_event_pick_item_medium,
+    ("missing_event", "hard"):             inject_missing_event_failed_delivery_hard,
+    ("missing_event_type", "easy"):        inject_missing_event_type_null_confirm_easy,
+    ("missing_event_type", "medium"):      inject_missing_event_type_empty_pay_medium,
+    ("missing_event_type", "hard"):        inject_missing_event_type_whitespace_package_hard,
+}

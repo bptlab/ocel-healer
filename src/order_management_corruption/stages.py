@@ -5,7 +5,7 @@ selected corruption level. Each `_stage_*` function calls one injector per
 issue in a fixed order, sharing one `TargetPicker` so targets never overlap,
 and returns the collected `Injection` records.
 
-Transitional: event- and relation-side injectors still use the old
+Transitional: relation-side injectors still use the old
 signature and return nothing; they are not yet part of the record.
 """
 
@@ -24,7 +24,7 @@ from src.order_management_corruption._common import (
     _remove_object_primary_key,
 )
 from src.order_management_corruption.event_issues import (
-    inject_missing_event_bare_id_hard,
+    inject_missing_event_failed_delivery_hard,
     inject_missing_event_pick_item_medium,
     inject_missing_event_place_order_easy,
     inject_missing_event_timestamp_empty_pick_item_medium,
@@ -117,9 +117,9 @@ def _stage_easy(conn: sqlite3.Connection, picker: TargetPicker) -> list[Injectio
     inject_dangling_e2o_relationship_missing_object_easy(conn)
     inject_dangling_o2o_relationship_missing_source(conn)
     # Event-side (Missing Data row)
-    inject_missing_event_timestamp_null_place_order_easy(conn)
-    inject_missing_event_place_order_easy(conn)
-    inject_missing_event_type_null_confirm_easy(conn)
+    out += inject_missing_event_timestamp_null_place_order_easy(conn, picker)
+    out += inject_missing_event_place_order_easy(conn, picker)
+    out += inject_missing_event_type_null_confirm_easy(conn, picker)
     # Relation-borne missing object
     inject_missing_object_order_easy(conn)
     # Incorrect-Data row (Relations)
@@ -141,9 +141,9 @@ def _stage_medium(conn: sqlite3.Connection, picker: TargetPicker) -> list[Inject
     inject_dangling_e2o_relationship_missing_event(conn)
     inject_dangling_o2o_relationship_missing_target(conn)
     # Event-side (Missing Data row)
-    inject_missing_event_timestamp_empty_pick_item_medium(conn)
-    inject_missing_event_pick_item_medium(conn)
-    inject_missing_event_type_empty_pay_medium(conn)
+    out += inject_missing_event_timestamp_empty_pick_item_medium(conn, picker)
+    out += inject_missing_event_pick_item_medium(conn, picker)
+    out += inject_missing_event_type_empty_pay_medium(conn, picker)
     # Relation-borne missing object
     inject_missing_object_item_medium(conn)
     # Incorrect-Data row (Relations)
@@ -165,9 +165,9 @@ def _stage_hard(conn: sqlite3.Connection, picker: TargetPicker) -> list[Injectio
     inject_dangling_e2o_relationship_missing_both(conn)
     inject_dangling_o2o_relationship_missing_both_typo(conn)
     # Event-side (Missing Data row)
-    inject_missing_event_timestamp_null_item_out_of_stock_hard(conn)
-    inject_missing_event_bare_id_hard(conn)
-    inject_missing_event_type_whitespace_package_hard(conn)
+    out += inject_missing_event_timestamp_null_item_out_of_stock_hard(conn, picker)
+    out += inject_missing_event_failed_delivery_hard(conn, picker)
+    out += inject_missing_event_type_whitespace_package_hard(conn, picker)
     # Relation-borne missing object
     inject_missing_object_product_hard(conn)
     # Incorrect-Data row (Relations)
