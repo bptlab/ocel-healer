@@ -70,6 +70,13 @@ class Injection:
         return asdict(self)
 
 
+def _accept_value(value: object) -> dict:
+    """Repair rule for restoring a single attribute value."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return {"mode": "numeric_tol", "value": value, "tol": NUMERIC_TOLERANCE}
+    return {"mode": "exact", "value": value}
+
+
 def _json_default(value: object) -> object:
     if isinstance(value, (bytes, bytearray, memoryview)):
         return {"__bytes__": bytes(value).hex()}

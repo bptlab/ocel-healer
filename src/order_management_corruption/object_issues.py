@@ -1,8 +1,8 @@
 """Object-side corruption injectors.
 
 Covers all issues rooted in the `object` table and its per-type
-sub-tables (`object_<Type>`): missing/incorrect object types, missing or
-type-invalid attribute values, and duplicate objects.
+sub-tables (`object_<Type>`): missing/incorrect object types, missing,
+type-invalid or implausible attribute values, and duplicate objects.
 
 Each `inject_<issue_key>_<flavor>(conn, picker)` corrupts `picker.n`
 seeded, non-overlapping targets and returns one `Injection` per target
@@ -19,17 +19,11 @@ from src.order_management_corruption._common import (
     NUMERIC_TOLERANCE,
     Injection,
     TargetPicker,
+    _accept_value,
     _capture_and_update,
     _clone_object_row,
     _remove_object_primary_key,
 )
-
-
-def _accept_value(value: object) -> dict:
-    """Repair rule for restoring a single attribute value."""
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return {"mode": "numeric_tol", "value": value, "tol": NUMERIC_TOLERANCE}
-    return {"mode": "exact", "value": value}
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +145,38 @@ def inject_incorrect_attribute_datatype_blob_in_role(conn, picker):
                               flavor="blob_in_role", object_type="employees",
                               table="object_Employees", column="role",
                               corrupt=lambda v: v.encode("utf-16-le"))
+
+
+
+def inject_incorrect_attribute_value_negative_weight(conn, picker):
+    """incorrect_attribute_value Easy: a product's weight made negative."""
+    return _corrupt_attribute(conn, picker, issue="incorrect_attribute_value", tier="easy",
+                              flavor="negative_weight", object_type="products",
+                              table="object_Products", column="weight", corrupt=lambda v: -v)
+
+
+def inject_incorrect_attribute_value_price_times_100(conn, picker):
+    """incorrect_attribute_value Medium: an order's price × 100, as if
+    entered in cents."""
+    return _corrupt_attribute(conn, picker, issue="incorrect_attribute_value", tier="medium",
+                              flavor="price_times_100", object_type="orders",
+                              table="object_Orders", column="price", corrupt=lambda v: v * 100)
+
+
+def inject_incorrect_attribute_value_other_product_price(conn, picker):
+    """incorrect_attribute_value Hard: an item's price replaced by the price
+    of a different product — in range, but not this item's."""
+    prices = sorted({p for (p,) in conn.execute(
+        "SELECT price FROM object_Products WHERE ocel_changed_field IS NULL AND price IS NOT NULL"
+    )})
+
+    def other_price(v):
+        far = [p for p in prices if abs(p - v) > NUMERIC_TOLERANCE * abs(v)]
+        return picker.rng.choice(far)
+
+    return _corrupt_attribute(conn, picker, issue="incorrect_attribute_value", tier="hard",
+                              flavor="other_product_price", object_type="items",
+                              table="object_Items", column="price", corrupt=other_price)
 
 
 # ---------------------------------------------------------------------------
@@ -321,4 +347,7 @@ OBJECT_INJECTORS: dict[tuple[str, str], Callable[[sqlite3.Connection, TargetPick
     ("duplicate_objects_on_attributes", "easy"):  inject_duplicate_objects_on_attributes_clone_product,
     ("duplicate_objects_on_attributes", "medium"): inject_duplicate_objects_on_attributes_clone_employee,
     ("duplicate_objects_on_attributes", "hard"):  inject_duplicate_objects_on_attributes_clone_order_and_referenced,
+    ("incorrect_attribute_value", "easy"):        inject_incorrect_attribute_value_negative_weight,
+    ("incorrect_attribute_value", "medium"):      inject_incorrect_attribute_value_price_times_100,
+    ("incorrect_attribute_value", "hard"):        inject_incorrect_attribute_value_other_product_price,
 }
