@@ -4,9 +4,6 @@
 selected corruption level. Each `_stage_*` function calls one injector per
 issue in a fixed order, sharing one `TargetPicker` so targets never overlap,
 and returns the collected `Injection` records.
-
-Transitional: relation-side injectors still use the old
-signature and return nothing; they are not yet part of the record.
 """
 
 from __future__ import annotations
@@ -69,7 +66,7 @@ from src.order_management_corruption.relation_issues import (
     inject_duplicate_o2o_relations_sales_rep_hard,
     inject_missing_object_item_medium,
     inject_missing_object_order_easy,
-    inject_missing_object_product_hard,
+    inject_missing_object_package_hard,
     inject_o2o_self_loop_employee_medium,
     inject_o2o_self_loop_order_easy,
     inject_o2o_self_loop_product_hard,
@@ -114,18 +111,18 @@ def _stage_easy(conn: sqlite3.Connection, picker: TargetPicker) -> list[Injectio
     out += inject_incorrect_object_type_order_to_employee(conn, picker)
     out += inject_incorrect_attribute_datatype_string_in_weight(conn, picker)
     out += inject_duplicate_objects_on_attributes_clone_product(conn, picker)
-    inject_dangling_e2o_relationship_missing_object_easy(conn)
-    inject_dangling_o2o_relationship_missing_source(conn)
+    out += inject_dangling_e2o_relationship_missing_object_easy(conn, picker)
+    out += inject_dangling_o2o_relationship_missing_source(conn, picker)
     # Event-side (Missing Data row)
     out += inject_missing_event_timestamp_null_place_order_easy(conn, picker)
     out += inject_missing_event_place_order_easy(conn, picker)
     out += inject_missing_event_type_null_confirm_easy(conn, picker)
     # Relation-borne missing object
-    inject_missing_object_order_easy(conn)
+    out += inject_missing_object_order_easy(conn, picker)
     # Incorrect-Data row (Relations)
-    inject_duplicate_o2o_relations_comprises_easy(conn)
-    inject_o2o_self_loop_order_easy(conn)
-    inject_duplicate_e2o_relations_order_easy(conn)
+    out += inject_duplicate_o2o_relations_comprises_easy(conn, picker)
+    out += inject_o2o_self_loop_order_easy(conn, picker)
+    out += inject_duplicate_e2o_relations_order_easy(conn, picker)
     return out
 
 
@@ -138,18 +135,18 @@ def _stage_medium(conn: sqlite3.Connection, picker: TargetPicker) -> list[Inject
     out += inject_incorrect_object_type_item_to_product(conn, picker)
     out += inject_incorrect_attribute_datatype_string_in_order_price(conn, picker)
     out += inject_duplicate_objects_on_attributes_clone_employee(conn, picker)
-    inject_dangling_e2o_relationship_missing_event(conn)
-    inject_dangling_o2o_relationship_missing_target(conn)
+    out += inject_dangling_e2o_relationship_missing_event(conn, picker)
+    out += inject_dangling_o2o_relationship_missing_target(conn, picker)
     # Event-side (Missing Data row)
     out += inject_missing_event_timestamp_empty_pick_item_medium(conn, picker)
     out += inject_missing_event_pick_item_medium(conn, picker)
     out += inject_missing_event_type_empty_pay_medium(conn, picker)
     # Relation-borne missing object
-    inject_missing_object_item_medium(conn)
+    out += inject_missing_object_item_medium(conn, picker)
     # Incorrect-Data row (Relations)
-    inject_duplicate_o2o_relations_places_medium(conn)
-    inject_o2o_self_loop_employee_medium(conn)
-    inject_duplicate_e2o_relations_item_medium(conn)
+    out += inject_duplicate_o2o_relations_places_medium(conn, picker)
+    out += inject_o2o_self_loop_employee_medium(conn, picker)
+    out += inject_duplicate_e2o_relations_item_medium(conn, picker)
     return out
 
 
@@ -162,18 +159,18 @@ def _stage_hard(conn: sqlite3.Connection, picker: TargetPicker) -> list[Injectio
     out += inject_incorrect_object_type_package_to_item(conn, picker)
     out += inject_incorrect_attribute_datatype_blob_in_role(conn, picker)
     out += inject_duplicate_objects_on_attributes_clone_order_and_referenced(conn, picker)
-    inject_dangling_e2o_relationship_missing_both(conn)
-    inject_dangling_o2o_relationship_missing_both_typo(conn)
+    out += inject_dangling_e2o_relationship_missing_both(conn, picker)
+    out += inject_dangling_o2o_relationship_missing_both_typo(conn, picker)
     # Event-side (Missing Data row)
     out += inject_missing_event_timestamp_null_item_out_of_stock_hard(conn, picker)
     out += inject_missing_event_failed_delivery_hard(conn, picker)
     out += inject_missing_event_type_whitespace_package_hard(conn, picker)
     # Relation-borne missing object
-    inject_missing_object_product_hard(conn)
+    out += inject_missing_object_package_hard(conn, picker)
     # Incorrect-Data row (Relations)
-    inject_duplicate_o2o_relations_sales_rep_hard(conn)
-    inject_o2o_self_loop_product_hard(conn)
-    inject_duplicate_e2o_relations_sales_person_hard(conn)
+    out += inject_duplicate_o2o_relations_sales_rep_hard(conn, picker)
+    out += inject_o2o_self_loop_product_hard(conn, picker)
+    out += inject_duplicate_e2o_relations_sales_person_hard(conn, picker)
     return out
 
 

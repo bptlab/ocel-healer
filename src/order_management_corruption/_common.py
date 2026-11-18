@@ -99,6 +99,12 @@ PROTECTED_IDS = frozenset({
 })
 
 
+# Cap on E2O rows referencing an object eligible for deletion, so the
+# missing_object cascade stays bounded (products/employees/customers have
+# hundreds to thousands; orders, items and packages at most 16).
+MAX_DELETE_FANOUT = 20
+
+
 class TargetPicker:
     """Seeded, non-overlapping target selection for one corrupted log.
 
@@ -210,6 +216,21 @@ class TargetPicker:
                 self._issued.add(cand)
                 return cand
         raise ValueError(f"Could not find a free near-miss for {name!r}")
+
+
+def _touch_low_fanout(picker: TargetPicker, ids: list[str]) -> None:
+    """Mark the neighbours of a corrupted relation or deletion as touched,
+    so a later injection can't alter how its rows are detected. Objects
+    referenced by more than MAX_DELETE_FANOUT E2O rows (the few shared
+    products, employees, customers) are left free, as they can't be
+    deleted and touching them would starve the object injectors. Event ids
+    have no such references and are always touched."""
+    for i in set(ids):
+        (n,) = picker.conn.execute(
+            "SELECT COUNT(*) FROM event_object WHERE ocel_object_id = ?", (i,)
+        ).fetchone()
+        if n <= MAX_DELETE_FANOUT:
+            picker.touch(i)
 
 
 def _default_dst_for_level(level: str) -> str:

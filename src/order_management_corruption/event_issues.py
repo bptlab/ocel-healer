@@ -28,6 +28,7 @@ from src.order_management_corruption._common import (
     TargetPicker,
     _capture_and_update,
     _delete_event_fully,
+    _touch_low_fanout,
     _type_table,
 )
 
@@ -160,6 +161,7 @@ def _missing_event(
     out = []
     for eid, accept in accepts.items():
         removed = _delete_event_fully(conn, eid)
+        _touch_low_fanout(picker, [r["ocel_object_id"] for r in removed["e2o"]])
         expected = []
         for r in removed["e2o"]:
             rel = {"ocel_event_id": eid, "ocel_object_id": r["ocel_object_id"],

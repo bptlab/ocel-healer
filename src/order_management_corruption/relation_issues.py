@@ -1,644 +1,402 @@
 """Relation-side corruption injectors.
 
 Covers issues rooted in the relation tables (`event_object`,
-`object_object`): dangling E2O and O2O references, plus the
-`missing_object` case where an E2O row points at a plausibly-typed but
-non-existent object id.
+`object_object`): dangling E2O and O2O references (an endpoint id turned
+into a one-character typo of the real id), deleted objects whose relations
+survive (`missing_object`), duplicated relation triples, and O2O
+self-loops.
+
+Each `inject_<issue_key>_<flavor>(conn, picker)` corrupts `picker.n`
+seeded, non-overlapping targets and returns one `Injection` per target
+(never an empty list — the picker raises instead). `RELATION_INJECTORS`
+maps ``(issue_key, tier)`` to the injector.
 """
 
 from __future__ import annotations
 
 import sqlite3
+from typing import Callable
 
-from .om_schema import (
-    get_om_object_type,
-    get_om_event_type,
-    get_om_e2o_qualifier,
-    get_om_o2o_qualifier,
+from src.order_management_corruption._common import (
+    MAX_DELETE_FANOUT,
+    Injection,
+    TargetPicker,
+    _delete_object_fully,
+    _touch_low_fanout,
 )
 
 
-# ---------------------------------------------------------------------------
-# Base dangling_e2o_relationship helpers — building blocks reused by the
-# tiered flavors below.
-# ---------------------------------------------------------------------------
+def _names_type(qualifier: str | None, ocel_type: str) -> bool:
+    """Whether `detect_missing_object` infers `ocel_type` from `qualifier`
+    (the type, its singular, or a qualifier ending in the singular)."""
+    if not isinstance(qualifier, str) or not qualifier.strip():
+        return False
+    singular = ocel_type[:-1] if ocel_type.endswith("s") else ocel_type
+    return qualifier in (ocel_type, singular) or qualifier.split()[-1] in (ocel_type, singular)
 
 
-def inject_dangling_e2o_relationship_object(conn: sqlite3.Connection) -> str | None:
-    """dangling_e2o_relationship: Insert an E2O row that references a
-    non-existent object (typo-shape id, doesn't collide with real orders)."""
-    event = conn.execute("SELECT ocel_id FROM event LIMIT 1").fetchone()
-    if event is None:
-        return None
-    fake_object_id = "o-990001x"
-    conn.execute(
-        "INSERT INTO event_object VALUES (?, ?, ?)",
-        (event[0], fake_object_id, "unknown"),
-    )
-    return fake_object_id
+def _object_type(conn: sqlite3.Connection, ocel_id: str) -> str | None:
+    row = conn.execute("SELECT ocel_type FROM object WHERE ocel_id = ?", (ocel_id,)).fetchone()
+    return row[0] if row else None
 
 
-def inject_dangling_e2o_relationship_event(conn: sqlite3.Connection) -> str | None:
-    """dangling_e2o_relationship: Insert an E2O row that references a
-    non-existent event (bare-id shape, doesn't collide)."""
-    obj = conn.execute("SELECT ocel_id FROM object WHERE ocel_type IS NOT NULL LIMIT 1").fetchone()
-    if obj is None:
-        return None
-    fake_event_id = "e-9900099"
-    conn.execute(
-        "INSERT INTO event_object VALUES (?, ?, ?)",
-        (fake_event_id, obj[0], "unknown"),
-    )
-    return fake_event_id
+def _accept_remap(real: dict, corrupted: dict) -> dict:
+    """Repair rule for a dangling relation: remap to the real id, or drop it."""
+    return {"mode": "one_of", "options": [
+        {"action": "remap", **real},
+        {"action": "delete", **corrupted},
+    ]}
 
 
 # ---------------------------------------------------------------------------
-# dangling_e2o_relationship (Easy/Medium/Hard)
+# dangling_e2o_relationship (Easy/Medium/Hard) — an existing E2O row gets a
+# typo in its object id, event id, or both.
 # ---------------------------------------------------------------------------
 
 
-def inject_dangling_e2o_relationship_missing_object_easy(conn: sqlite3.Connection) -> str | None:
-    """dangling_e2o_relationship Easy: E2O row references a nonexistent
-    object (`missing_side='object'`)."""
-    return inject_dangling_e2o_relationship_object(conn)
-
-
-def inject_dangling_e2o_relationship_missing_event(conn: sqlite3.Connection) -> str | None:
-    """dangling_e2o_relationship Medium: E2O row references a nonexistent
-    event (`missing_side='event'`)."""
-    return inject_dangling_e2o_relationship_event(conn)
-
-
-def inject_dangling_e2o_relationship_missing_both(conn: sqlite3.Connection) -> tuple[str, str]:
-    """dangling_e2o_relationship Hard: E2O row where BOTH endpoints are
-    typo near-misses of real ids (neither exists)."""
-    fake_event = "e-771001"
-    fake_object = "Balkan Mineraals d.o.o."  # real id: 'Balkan Minerals d.o.o.'
-    conn.execute(
-        "INSERT INTO event_object VALUES (?, ?, ?)",
-        (fake_event, fake_object, "unknown"),
-    )
-    return fake_event, fake_object
-
-
-# ---------------------------------------------------------------------------
-# dangling_o2o_relationship (Easy/Medium/Hard)
-# ---------------------------------------------------------------------------
-
-
-def inject_dangling_o2o_relationship_missing_source(conn: sqlite3.Connection) -> tuple[str, str]:
-    """dangling_o2o_relationship Easy: Source id is a typo near-miss of a
-    real employee, target is a real employee.
-    Example: 'Alex Rivers' (typo) → 'Alex Rivera' (real)"""
-    obj_type = get_om_object_type("employees")
-    qualifier = get_om_o2o_qualifier("processed_by")
-
-    dst = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (obj_type,)
-    ).fetchone()
-    if dst is None:
-        return ("fake-src", "fake-dst")
-
-    src = f"{dst[0]}-TYPO"  # Create typo variant
-    conn.execute(
-        "INSERT INTO object_object VALUES (?, ?, ?)",
-        (src, dst[0], qualifier),
-    )
-    return src, dst[0]
-
-
-def inject_dangling_o2o_relationship_missing_target(conn: sqlite3.Connection) -> tuple[str, str]:
-    """dangling_o2o_relationship Medium: Real source references a
-    typo near-miss target.
-    Example: Customer 'Balkan Minerals' → '<employee-id>-TYPO' (dangling target)"""
-    customers_type = get_om_object_type("customers")
-    employee_type = get_om_object_type("employees")
-    qualifier = get_om_o2o_qualifier("processed_by")
-
-    src = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (customers_type,)
-    ).fetchone()
-    dst = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (employee_type,)
-    ).fetchone()
-
-    if src is None or dst is None:
-        return ("fake-src", "fake-dst")
-
-    dst_typo = f"{dst[0]}-TYPO"
-    conn.execute(
-        "INSERT INTO object_object VALUES (?, ?, ?)",
-        (src[0], dst_typo, qualifier),
-    )
-    return src[0], dst_typo
-
-
-def inject_dangling_o2o_relationship_missing_both_typo(conn: sqlite3.Connection) -> tuple[str, str]:
-    """dangling_o2o_relationship Hard: Both endpoints are typo near-misses
-    of real ids."""
-    customers_type = get_om_object_type("customers")
-    employee_type = get_om_object_type("employees")
-    qualifier = get_om_o2o_qualifier("processed_by")
-
-    src = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (customers_type,)
-    ).fetchone()
-    dst = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (employee_type,)
-    ).fetchone()
-
-    if src is None or dst is None:
-        return ("fake-src", "fake-dst")
-
-    src_typo = f"{src[0]}-TYPO1"
-    dst_typo = f"{dst[0]}-TYPO2"
-    conn.execute(
-        "INSERT INTO object_object VALUES (?, ?, ?)",
-        (src_typo, dst_typo, qualifier),
-    )
-    return src_typo, dst_typo
-
-
-# ---------------------------------------------------------------------------
-# missing_object (Easy/Medium/Hard)
-#
-# Each injector inserts an E2O row whose ocel_object_id is a plausibly-typed
-# but non-existent id. These rows also trip the dangling_e2o_relationship
-# detector — that's expected and intentional; the dashboard routes them to
-# the missing_object cell.
-# ---------------------------------------------------------------------------
-
-
-def inject_missing_object_order_easy(conn: sqlite3.Connection) -> dict | None:
-    """missing_object Easy: delete a real purchase_order object that is still
-    referenced by a 'place order' E2O row, leaving that row dangling.
-
-    Easy because the type is unambiguous from the surviving E2O qualifier,
-    and the peer set for the LLM to imitate is large.
-    """
-    place_type = get_om_event_type("place order")
-    order_qual = get_om_e2o_qualifier("order")
-    row = conn.execute(
-        "SELECT o.ocel_id, o.ocel_type FROM object o "
-        "JOIN event_object eo ON eo.ocel_object_id = o.ocel_id "
-        "JOIN event e ON e.ocel_id = eo.ocel_event_id "
-        "WHERE e.ocel_type = ? AND eo.ocel_qualifier = ? LIMIT 1",
-        (place_type, order_qual),
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id, ocel_type = row
-    conn.execute("DELETE FROM object WHERE ocel_id = ?", (ocel_id,))
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: ocel_type}}
-
-
-def inject_missing_object_item_medium(conn: sqlite3.Connection) -> dict | None:
-    """missing_object Medium: delete a real material object that is still
-    referenced by a 'pick item' E2O row, leaving that row dangling.
-
-    Medium because materials are used in multiple contexts.
-    """
-    pick_type = get_om_event_type("pick item")
-    item_qual = get_om_e2o_qualifier("item")
-    row = conn.execute(
-        "SELECT o.ocel_id, o.ocel_type FROM object o "
-        "JOIN event_object eo ON eo.ocel_object_id = o.ocel_id "
-        "JOIN event e ON e.ocel_id = eo.ocel_event_id "
-        "WHERE e.ocel_type = ? AND eo.ocel_qualifier = ? LIMIT 1",
-        (pick_type, item_qual),
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id, ocel_type = row
-    conn.execute("DELETE FROM object WHERE ocel_id = ?", (ocel_id,))
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: ocel_type}}
-
-
-def inject_missing_object_product_hard(conn: sqlite3.Connection) -> dict | None:
-    """missing_object Hard: delete a real material object referenced with
-    qualifier 'product' from a 'place order' E2O row, leaving that row
-    dangling.
-    Example: products:Echo Show 10 (plausible-sounding product in existing
-    family like Echo Show 5, Echo Show 8, but this id doesn't exist).
-
-    Hard because material ids may not use type prefix consistently, so the
-    LLM can't lean on id shape the way it could for the easy/medium cases.
-    """
-    place_type = get_om_event_type("place order")
-    product_qual = get_om_e2o_qualifier("product")
-    # Skip objects whose type has already been corrupted by an earlier
-    # injector in the same tier (`missing_object_type` picks the same
-    # product), so the two issues remain independently observable.
-    row = conn.execute(
-        "SELECT o.ocel_id, o.ocel_type FROM object o "
-        "JOIN event_object eo ON eo.ocel_object_id = o.ocel_id "
-        "JOIN event e ON e.ocel_id = eo.ocel_event_id "
-        "WHERE e.ocel_type = ? AND eo.ocel_qualifier = ? "
-        "  AND o.ocel_type IS NOT NULL AND TRIM(o.ocel_type) != '' "
-        "LIMIT 1",
-        (place_type, product_qual),
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id, ocel_type = row
-    conn.execute("DELETE FROM object WHERE ocel_id = ?", (ocel_id,))
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: ocel_type}}
-
-
-# ---------------------------------------------------------------------------
-# duplicate_o2o_relations (Easy/Medium/Hard)
-#
-# Insert extra copies of a real (source, target, qualifier) triple in
-# `object_object`. Both endpoints exist — it's the triple that's redundant.
-# The clean fixture leaves this table without a PRIMARY KEY constraint, so
-# straight INSERTs are enough; no schema tweaks needed.
-# ---------------------------------------------------------------------------
-
-
-def _insert_o2o_copies(
-    conn: sqlite3.Connection, src: str, tgt: str, qual: str, extras: int
-) -> tuple[str, str, str]:
-    for _ in range(extras):
+def _dangling_e2o(
+    conn: sqlite3.Connection, picker: TargetPicker, *,
+    tier: str, flavor: str, event_type: str, qualifier: str, typo_event: bool, typo_object: bool,
+) -> list[Injection]:
+    out = []
+    for eid in picker.pick("SELECT ocel_id FROM event WHERE ocel_type = ?", (event_type,)):
+        oid = conn.execute(
+            "SELECT ocel_object_id FROM event_object WHERE ocel_event_id = ? AND ocel_qualifier = ?",
+            (eid, qualifier),
+        ).fetchone()[0]
+        _touch_low_fanout(picker, [oid])
+        bad_eid = picker.near_miss(eid) if typo_event else eid
+        bad_oid = picker.near_miss(oid) if typo_object else oid
         conn.execute(
-            "INSERT INTO object_object VALUES (?, ?, ?)",
-            (src, tgt, qual),
+            "UPDATE event_object SET ocel_event_id = ?, ocel_object_id = ? "
+            "WHERE ocel_event_id = ? AND ocel_object_id = ? AND ocel_qualifier = ?",
+            (bad_eid, bad_oid, eid, oid, qualifier),
         )
-    return src, tgt, qual
+        real = {"ocel_event_id": eid, "ocel_object_id": oid, "ocel_qualifier": qualifier}
+        bad = {"ocel_event_id": bad_eid, "ocel_object_id": bad_oid, "ocel_qualifier": qualifier}
+        side = "both" if typo_event and typo_object else "event" if typo_event else "object"
+        expected = [{"issue": "dangling_e2o_relationship", **bad, "missing_side": side}]
+        if typo_event:
+            expected.append({"issue": "missing_event", **bad})
+        if typo_object and _names_type(qualifier, _object_type(conn, oid)):
+            expected.append({"issue": "missing_object", **bad})
+        out.append(Injection(
+            "dangling_e2o_relationship", tier, flavor, "e2o", bad,
+            original=real, corrupted=bad,
+            expected_rows=expected, accept=_accept_remap(real, bad),
+        ))
+    return out
 
 
-def inject_duplicate_o2o_relations_comprises_easy(
-    conn: sqlite3.Connection,
-) -> tuple[str, str, str]:
-    """duplicate_o2o_relations Easy: insert duplicate o2o triple."""
-    qual = get_om_o2o_qualifier("comprises")
-    row = conn.execute(
-        "SELECT ocel_source_id, ocel_target_id FROM object_object WHERE ocel_qualifier = ? LIMIT 1", (qual,)
-    ).fetchone()
-    if row is None:
-        # Fallback: create relationship between any two materials
-        src = conn.execute("SELECT ocel_id FROM object LIMIT 1").fetchone()
-        tgt = conn.execute("SELECT ocel_id FROM object LIMIT 1 OFFSET 1").fetchone()
-        if src and tgt:
-            return _insert_o2o_copies(conn, src[0], tgt[0], qual, extras=2)
-        return ("fake", "fake", qual)
-    return _insert_o2o_copies(conn, row[0], row[1], qual, extras=2)
+def inject_dangling_e2o_relationship_missing_object_easy(conn, picker):
+    """dangling_e2o_relationship Easy: a place order's `order` link points
+    at a one-digit typo of the order id."""
+    return _dangling_e2o(conn, picker, tier="easy", flavor="missing_object",
+                         event_type="place order", qualifier="order",
+                         typo_event=False, typo_object=True)
 
 
-def inject_duplicate_o2o_relations_places_medium(
-    conn: sqlite3.Connection,
-) -> tuple[str, str, str]:
-    """duplicate_o2o_relations Medium: a customer↔order `places` triple
-    gets two extra copies. Cross-type edge (customer → order) rather than
-    the item-to-order path exercised in easy."""
-    src = conn.execute(
-        "SELECT ocel_source_id FROM object_object WHERE ocel_qualifier = 'places' LIMIT 1"
-    ).fetchone()
-    tgt = conn.execute(
-        "SELECT ocel_target_id FROM object_object WHERE ocel_qualifier = 'places' "
-        "AND ocel_source_id = ? LIMIT 1",
-        (src[0],) if src else (None,),
-    ).fetchone()
-    if not (src and tgt):
-        return "", "", ""
-    return _insert_o2o_copies(conn, src[0], tgt[0], "places", extras=2)
+def inject_dangling_e2o_relationship_missing_event(conn, picker):
+    """dangling_e2o_relationship Medium: a pick item's `item` link comes
+    from a one-digit typo of the event id."""
+    return _dangling_e2o(conn, picker, tier="medium", flavor="missing_event",
+                         event_type="pick item", qualifier="item",
+                         typo_event=True, typo_object=False)
 
 
-def inject_duplicate_o2o_relations_sales_rep_hard(
-    conn: sqlite3.Connection,
-) -> tuple[str, str, str]:
-    """duplicate_o2o_relations Hard: a low-frequency (~15 rows total)
-    `primarySalesRep` triple gets two extra copies. Hard because the
-    surrounding qualifier is rare — one accidental extra could plausibly
-    look like a legitimate multi-rep assignment."""
-    return _insert_o2o_copies(
-        conn, "Danube Pharmaceuticals BV", "Christine von Dobbert",
-        "primarySalesRep", extras=2,
-    )
+def inject_dangling_e2o_relationship_missing_both(conn, picker):
+    """dangling_e2o_relationship Hard: a confirm order's `sales person` link
+    has typos on both ends — a digit in the event id, a letter in the
+    employee's name."""
+    return _dangling_e2o(conn, picker, tier="hard", flavor="missing_both",
+                         event_type="confirm order", qualifier="sales person",
+                         typo_event=True, typo_object=True)
 
 
 # ---------------------------------------------------------------------------
-# o2o_self_loop (Easy/Medium/Hard)
-#
-# Insert an `object_object` row where source == target (same object id
-# under a qualifier). Structurally illegal — an object relating to itself
-# under a qualifier is not what `object_object` is for.
+# dangling_o2o_relationship (Easy/Medium/Hard) — an existing O2O row gets a
+# typo in its source, target, or both. `picks` names the endpoint the
+# picker samples (it is unique per row for the chosen qualifier).
 # ---------------------------------------------------------------------------
 
 
-def inject_o2o_self_loop_order_easy(conn: sqlite3.Connection) -> str:
-    """o2o_self_loop Easy: an order references itself under `contains`.
-    Easy because orders are the dataset's central entity — a self-loop
-    among them is glaring."""
-    conn.execute(
-        "INSERT INTO object_object VALUES (?, ?, ?)",
-        ("o-990001", "o-990001", "contains"),
-    )
-    return "o-990001"
-
-
-def inject_o2o_self_loop_employee_medium(conn: sqlite3.Connection) -> str:
-    """o2o_self_loop Medium: an employee references themselves under
-    `primarySalesRep`. Medium because a person being their own sales rep
-    is superficially plausible in a poorly-designed schema — but still
-    structurally wrong for O2O."""
-    conn.execute(
-        "INSERT INTO object_object VALUES (?, ?, ?)",
-        ("Alex Rivera", "Alex Rivera", "primarySalesRep"),
-    )
-    return "Alex Rivera"
-
-
-def inject_o2o_self_loop_product_hard(conn: sqlite3.Connection) -> str:
-    """o2o_self_loop Hard: a product references itself under a qualifier
-    that doesn't otherwise appear on products (`is a` typically links
-    items to products). Hard because the qualifier itself is
-    off-diagonal — the detector must still flag on the source=target
-    condition alone, without leaning on qualifier semantics."""
-    conn.execute(
-        "INSERT INTO object_object VALUES (?, ?, ?)",
-        ("Echo", "Echo", "is a"),
-    )
-    return "Echo"
-
-
-# ---------------------------------------------------------------------------
-# duplicate_e2o_relations (Easy/Medium/Hard)
-#
-# Insert extra copies of a real (event, object, qualifier) triple in
-# `event_object`. Event-side mirror of `duplicate_o2o_relations`; the
-# clean fixture also leaves this table PK-less.
-# ---------------------------------------------------------------------------
-
-
-def _insert_e2o_copies(
-    conn: sqlite3.Connection, ev: str, obj: str, qual: str, extras: int
-) -> tuple[str, str, str]:
-    for _ in range(extras):
+def _dangling_o2o(
+    conn: sqlite3.Connection, picker: TargetPicker, *,
+    tier: str, flavor: str, qualifier: str, picks: str, typo_source: bool, typo_target: bool,
+) -> list[Injection]:
+    other = "ocel_target_id" if picks == "ocel_source_id" else "ocel_source_id"
+    out = []
+    for pid in picker.pick(
+        f"SELECT {picks} FROM object_object WHERE ocel_qualifier = ?", (qualifier,)
+    ):
+        (xid,) = conn.execute(
+            f"SELECT {other} FROM object_object WHERE {picks} = ? AND ocel_qualifier = ?",
+            (pid, qualifier),
+        ).fetchone()
+        _touch_low_fanout(picker, [xid])
+        src, tgt = (pid, xid) if picks == "ocel_source_id" else (xid, pid)
+        bad_src = picker.near_miss(src) if typo_source else src
+        bad_tgt = picker.near_miss(tgt) if typo_target else tgt
         conn.execute(
-            "INSERT INTO event_object VALUES (?, ?, ?)",
-            (ev, obj, qual),
+            "UPDATE object_object SET ocel_source_id = ?, ocel_target_id = ? "
+            "WHERE ocel_source_id = ? AND ocel_target_id = ? AND ocel_qualifier = ?",
+            (bad_src, bad_tgt, src, tgt, qualifier),
         )
-    return ev, obj, qual
+        real = {"ocel_source_id": src, "ocel_target_id": tgt, "ocel_qualifier": qualifier}
+        bad = {"ocel_source_id": bad_src, "ocel_target_id": bad_tgt, "ocel_qualifier": qualifier}
+        side = "both" if typo_source and typo_target else "source" if typo_source else "target"
+        out.append(Injection(
+            "dangling_o2o_relationship", tier, flavor, "o2o", bad,
+            original=real, corrupted=bad,
+            expected_rows=[{"issue": "dangling_o2o_relationship", **bad, "missing_side": side}],
+            accept=_accept_remap(real, bad),
+        ))
+    return out
 
 
-def inject_duplicate_e2o_relations_order_easy(
-    conn: sqlite3.Connection,
-) -> tuple[str, str, str]:
-    """duplicate_e2o_relations Easy: a place_order↔order triple gets two
-    extra copies. Order-touching events are the highest-signal edges in
-    the log, so an accidental extra copy sits directly on the critical
-    path."""
-    return _insert_e2o_copies(conn, "place_o-990001", "o-990001", "order", extras=2)
+def inject_dangling_o2o_relationship_missing_source(conn, picker):
+    """dangling_o2o_relationship Easy: a `places` row whose source is a
+    one-letter typo of the customer's name."""
+    return _dangling_o2o(conn, picker, tier="easy", flavor="missing_source",
+                         qualifier="places", picks="ocel_target_id",
+                         typo_source=True, typo_target=False)
 
 
-def inject_duplicate_e2o_relations_item_medium(
-    conn: sqlite3.Connection,
-) -> tuple[str, str, str]:
-    """duplicate_e2o_relations Medium: a pick_item↔item triple gets two
-    extra copies. Items are the highest-frequency object type in E2O
-    (~61k rows), so the duplicate has to actually hash-match to stand out."""
-    ev = conn.execute(
-        "SELECT ocel_event_id, ocel_object_id "
-        "FROM event_object WHERE ocel_qualifier = 'item' "
-        "AND ocel_event_id LIKE 'pick%' LIMIT 1"
-    ).fetchone()
-    if not ev:
-        return "", "", ""
-    return _insert_e2o_copies(conn, ev[0], ev[1], "item", extras=2)
+def inject_dangling_o2o_relationship_missing_target(conn, picker):
+    """dangling_o2o_relationship Medium: a `comprises` row whose target is a
+    one-digit typo of the item id."""
+    return _dangling_o2o(conn, picker, tier="medium", flavor="missing_target",
+                         qualifier="comprises", picks="ocel_target_id",
+                         typo_source=False, typo_target=True)
 
 
-def inject_duplicate_e2o_relations_sales_person_hard(
-    conn: sqlite3.Connection,
-) -> tuple[str, str, str]:
-    """duplicate_e2o_relations Hard: a place_order↔sales_person triple
-    gets two extra copies. Hard because `sales person` is a lower-volume
-    qualifier (~2k rows) and multi-rep assignments could look real; the
-    detector still fires because it's the SAME (event, sales_person)
-    edge repeated, not two different reps on one order."""
-    ev = conn.execute(
-        "SELECT ocel_event_id, ocel_object_id "
-        "FROM event_object WHERE ocel_qualifier = 'sales person' LIMIT 1"
-    ).fetchone()
-    if not ev:
-        return "", "", ""
-    return _insert_e2o_copies(conn, ev[0], ev[1], "sales person", extras=2)
+def inject_dangling_o2o_relationship_missing_both_typo(conn, picker):
+    """dangling_o2o_relationship Hard: a `packed by` row with typos on both
+    ends — a digit in the package id, a letter in the employee's name."""
+    return _dangling_o2o(conn, picker, tier="hard", flavor="missing_both_typo",
+                         qualifier="packed by", picks="ocel_source_id",
+                         typo_source=True, typo_target=True)
 
 
 # ---------------------------------------------------------------------------
-# incorrect_e2o_relationship_target (Easy/Hard)
+# missing_object (Easy/Medium/Hard) — the object and its object_<Type> rows
+# are deleted; its E2O rows survive and trip `missing_object` (where the
+# qualifier names the type) and `dangling_e2o_relationship`, its O2O rows
+# trip `dangling_o2o_relationship`. Only objects with at most
+# MAX_DELETE_FANOUT E2O rows are eligible, so the cascade stays small.
 # ---------------------------------------------------------------------------
 
 
-def inject_incorrect_e2o_relationship_target_wrong_order_easy(
-    conn: sqlite3.Connection,
-) -> tuple[str, str]:
-    """incorrect_e2o_relationship_target Easy: PlaceOrder event connected to wrong order.
-
-    Easy because the event type and qualifier clearly indicate which object it should target,
-    but it's connected to a completely different order."""
-    # Find a PlaceOrder event and swap its order connection
-    row = conn.execute("""
-        SELECT eo.ocel_event_id, eo.ocel_object_id, o2.ocel_id as wrong_order
-        FROM event_object eo
-        JOIN event e ON eo.ocel_event_id = e.ocel_id
-        JOIN object o1 ON eo.ocel_object_id = o1.ocel_id
-        JOIN object o2 ON o2.ocel_type = 'orders' AND o2.ocel_id != o1.ocel_id
-        WHERE e.ocel_type = 'place order' AND eo.ocel_qualifier = 'order'
-        LIMIT 1
-    """).fetchone()
-    if not row:
-        return "", ""
-    event_id, correct_order, wrong_order = row
-    # Update to point to wrong order
-    conn.execute(
-        "UPDATE event_object SET ocel_object_id = ? WHERE ocel_event_id = ? AND ocel_qualifier = 'order'",
-        (wrong_order, event_id),
-    )
-    return event_id, wrong_order
-
-
-def inject_incorrect_e2o_relationship_target_plausible_hard(
-    conn: sqlite3.Connection,
-) -> tuple[str, str]:
-    """incorrect_e2o_relationship_target Hard: PickItem event connected to plausible but wrong item.
-
-    Hard because both items might be in the same order, making it harder to detect."""
-    # Find a PickItem event and swap to a different item
-    row = conn.execute("""
-        SELECT eo.ocel_event_id, eo.ocel_object_id, o2.ocel_id as wrong_item
-        FROM event_object eo
-        JOIN event e ON eo.ocel_event_id = e.ocel_id
-        JOIN object o1 ON eo.ocel_object_id = o1.ocel_id
-        JOIN object o2 ON o2.ocel_type = 'items' AND o2.ocel_id != o1.ocel_id
-        WHERE e.ocel_type = 'pick item' AND eo.ocel_qualifier = 'item'
-        LIMIT 1
-    """).fetchone()
-    if not row:
-        return "", ""
-    event_id, correct_item, wrong_item = row
-    # Update to point to wrong item
-    conn.execute(
-        "UPDATE event_object SET ocel_object_id = ? WHERE ocel_event_id = ? AND ocel_qualifier = 'item'",
-        (wrong_item, event_id),
-    )
-    return event_id, wrong_item
+def _missing_object(
+    conn: sqlite3.Connection, picker: TargetPicker, *,
+    tier: str, flavor: str, ocel_type: str,
+) -> list[Injection]:
+    out = []
+    ids = picker.pick("SELECT ocel_id FROM object WHERE ocel_type = ?", (ocel_type,),
+                      max_fanout=MAX_DELETE_FANOUT)
+    for oid in ids:
+        removed = _delete_object_fully(conn, oid)
+        _touch_low_fanout(picker, [r["ocel_event_id"] for r in removed["e2o"]] + [
+            r["ocel_target_id"] if r["ocel_source_id"] == oid else r["ocel_source_id"]
+            for r in removed["o2o"]
+        ])
+        expected = []
+        for r in removed["e2o"]:
+            rel = {"ocel_event_id": r["ocel_event_id"], "ocel_object_id": oid,
+                   "ocel_qualifier": r["ocel_qualifier"]}
+            expected.append({"issue": "dangling_e2o_relationship", **rel, "missing_side": "object"})
+            if _names_type(r["ocel_qualifier"], ocel_type):
+                expected.append({"issue": "missing_object", **rel})
+        for r in removed["o2o"]:
+            expected.append({
+                "issue": "dangling_o2o_relationship",
+                "ocel_source_id": r["ocel_source_id"], "ocel_target_id": r["ocel_target_id"],
+                "ocel_qualifier": r["ocel_qualifier"],
+                "missing_side": "source" if r["ocel_source_id"] == oid else "target",
+            })
+        out.append(Injection(
+            "missing_object", tier, flavor, "object", oid,
+            original=removed, corrupted=None,
+            expected_rows=expected, accept={"mode": "exact", "value": ocel_type},
+        ))
+    return out
 
 
-# ---------------------------------------------------------------------------
-# incorrect_e2o_relationship_qualifier (Easy/Hard)
-# ---------------------------------------------------------------------------
+def inject_missing_object_order_easy(conn, picker):
+    """missing_object Easy: delete an order. Its `order` E2O links name the
+    type, and its customer and items stay linked through O2O."""
+    return _missing_object(conn, picker, tier="easy", flavor="order", ocel_type="orders")
 
 
-def inject_incorrect_e2o_relationship_qualifier_obvious_easy(
-    conn: sqlite3.Connection,
-) -> tuple[str, str, str]:
-    """incorrect_e2o_relationship_qualifier Easy: Change 'order' qualifier to 'item' (obviously wrong).
-
-    Easy because a PlaceOrder event should connect to an order with 'order' qualifier, not 'item'."""
-    row = conn.execute("""
-        SELECT eo.ocel_event_id, eo.ocel_object_id, eo.ocel_qualifier
-        FROM event_object eo
-        JOIN event e ON eo.ocel_event_id = e.ocel_id
-        WHERE e.ocel_type = 'place order' AND eo.ocel_qualifier = 'order'
-        LIMIT 1
-    """).fetchone()
-    if not row:
-        return "", "", ""
-    event_id, object_id, old_qual = row
-    new_qual = "item"
-    conn.execute(
-        "UPDATE event_object SET ocel_qualifier = ? WHERE ocel_event_id = ? AND ocel_object_id = ?",
-        (new_qual, event_id, object_id),
-    )
-    return event_id, object_id, new_qual
+def inject_missing_object_item_medium(conn, picker):
+    """missing_object Medium: delete an item. Its attributes must be
+    reconstructed from the product it `is a` and its order's other items."""
+    return _missing_object(conn, picker, tier="medium", flavor="item", ocel_type="items")
 
 
-def inject_incorrect_e2o_relationship_qualifier_subtle_hard(
-    conn: sqlite3.Connection,
-) -> tuple[str, str, str]:
-    """incorrect_e2o_relationship_qualifier Hard: Change 'sales person' to 'salesperson' (typo variant).
-
-    Hard because it's a plausible typo that might not be caught without domain knowledge."""
-    row = conn.execute("""
-        SELECT ocel_event_id, ocel_object_id, ocel_qualifier
-        FROM event_object
-        WHERE ocel_qualifier = 'sales person'
-        LIMIT 1
-    """).fetchone()
-    if not row:
-        return "", "", ""
-    event_id, object_id, old_qual = row
-    new_qual = "salesperson"
-    conn.execute(
-        "UPDATE event_object SET ocel_qualifier = ? WHERE ocel_event_id = ? AND ocel_object_id = ?",
-        (new_qual, event_id, object_id),
-    )
-    return event_id, object_id, new_qual
+def inject_missing_object_package_hard(conn, picker):
+    """missing_object Hard: delete a package. Only the `shipped package`
+    links name the type; `creates` and the O2O rows to items and employees
+    do not."""
+    return _missing_object(conn, picker, tier="hard", flavor="package", ocel_type="packages")
 
 
 # ---------------------------------------------------------------------------
-# incorrect_o2o_relationship_target (Easy/Hard)
+# duplicate_e2o_relations / duplicate_o2o_relations (Easy/Medium/Hard) —
+# extra copies of a real triple. Both endpoints exist.
 # ---------------------------------------------------------------------------
 
 
-def inject_incorrect_o2o_relationship_target_wrong_item_easy(
-    conn: sqlite3.Connection,
-) -> tuple[str, str]:
-    """incorrect_o2o_relationship_target Easy: Order 'comprises' wrong item (obviously mismatched).
-
-    Easy because the order and item are completely unrelated."""
-    # Find an order→item comprises relation and swap the target
-    row = conn.execute("""
-        SELECT oo.ocel_source_id, oo.ocel_target_id, o2.ocel_id as wrong_item
-        FROM object_object oo
-        JOIN object o1 ON oo.ocel_source_id = o1.ocel_id
-        JOIN object o2 ON o2.ocel_type = 'items' AND o2.ocel_id != oo.ocel_target_id
-        WHERE oo.ocel_qualifier = 'comprises' AND o1.ocel_type = 'orders'
-        LIMIT 1
-    """).fetchone()
-    if not row:
-        return "", ""
-    source_id, correct_target, wrong_target = row
-    # Update to point to wrong item
-    conn.execute(
-        "UPDATE object_object SET ocel_target_id = ? WHERE ocel_source_id = ? AND ocel_target_id = ? AND ocel_qualifier = 'comprises'",
-        (wrong_target, source_id, correct_target),
-    )
-    return source_id, wrong_target
+def _duplicate_e2o(
+    conn: sqlite3.Connection, picker: TargetPicker, *,
+    tier: str, flavor: str, event_type: str, qualifier: str, extras: int,
+) -> list[Injection]:
+    out = []
+    for eid in picker.pick("SELECT ocel_id FROM event WHERE ocel_type = ?", (event_type,)):
+        (oid,) = conn.execute(
+            "SELECT ocel_object_id FROM event_object WHERE ocel_event_id = ? AND ocel_qualifier = ?",
+            (eid, qualifier),
+        ).fetchone()
+        _touch_low_fanout(picker, [oid])
+        rel = {"ocel_event_id": eid, "ocel_object_id": oid, "ocel_qualifier": qualifier}
+        conn.executemany("INSERT INTO event_object VALUES (?, ?, ?)", [(eid, oid, qualifier)] * extras)
+        out.append(Injection(
+            "duplicate_e2o_relations", tier, flavor, "e2o", rel,
+            original=1, corrupted=1 + extras,
+            expected_rows=[{"issue": "duplicate_e2o_relations", **rel}],
+            accept={"mode": "delete_any_of", "keep": 1, **rel},
+        ))
+    return out
 
 
-def inject_incorrect_o2o_relationship_target_plausible_hard(
-    conn: sqlite3.Connection,
-) -> tuple[str, str]:
-    """incorrect_o2o_relationship_target Hard: Customer 'places' wrong order (plausible but incorrect).
+def inject_duplicate_e2o_relations_order_easy(conn, picker):
+    """duplicate_e2o_relations Easy: a place order's `order` link recorded
+    three times."""
+    return _duplicate_e2o(conn, picker, tier="easy", flavor="order",
+                          event_type="place order", qualifier="order", extras=2)
 
-    Hard because the customer exists and the order exists, making it seem valid."""
-    # Find a customer→order places relation and swap the target
-    row = conn.execute("""
-        SELECT oo.ocel_source_id, oo.ocel_target_id, o2.ocel_id as wrong_order
-        FROM object_object oo
-        JOIN object o1 ON oo.ocel_source_id = o1.ocel_id
-        JOIN object o2 ON o2.ocel_type = 'orders' AND o2.ocel_id != oo.ocel_target_id
-        WHERE oo.ocel_qualifier = 'places' AND o1.ocel_type = 'customers'
-        LIMIT 1
-    """).fetchone()
-    if not row:
-        return "", ""
-    source_id, correct_target, wrong_target = row
-    # Update to point to wrong order
-    conn.execute(
-        "UPDATE object_object SET ocel_target_id = ? WHERE ocel_source_id = ? AND ocel_target_id = ? AND ocel_qualifier = 'places'",
-        (wrong_target, source_id, correct_target),
-    )
-    return source_id, wrong_target
+
+def inject_duplicate_e2o_relations_item_medium(conn, picker):
+    """duplicate_e2o_relations Medium: a pick item's `item` link recorded
+    twice, among the log's highest-volume qualifier."""
+    return _duplicate_e2o(conn, picker, tier="medium", flavor="item",
+                          event_type="pick item", qualifier="item", extras=1)
+
+
+def inject_duplicate_e2o_relations_sales_person_hard(conn, picker):
+    """duplicate_e2o_relations Hard: a confirm order's `sales person` link
+    recorded twice; a second copy could pass for a second rep."""
+    return _duplicate_e2o(conn, picker, tier="hard", flavor="sales_person",
+                          event_type="confirm order", qualifier="sales person", extras=1)
+
+
+def _duplicate_o2o(
+    conn: sqlite3.Connection, picker: TargetPicker, *,
+    tier: str, flavor: str, qualifier: str, picks: str, extras: int,
+) -> list[Injection]:
+    other = "ocel_target_id" if picks == "ocel_source_id" else "ocel_source_id"
+    out = []
+    for pid in picker.pick(
+        f"SELECT {picks} FROM object_object WHERE ocel_qualifier = ?", (qualifier,)
+    ):
+        (xid,) = conn.execute(
+            f"SELECT {other} FROM object_object WHERE {picks} = ? AND ocel_qualifier = ?",
+            (pid, qualifier),
+        ).fetchone()
+        _touch_low_fanout(picker, [xid])
+        src, tgt = (pid, xid) if picks == "ocel_source_id" else (xid, pid)
+        rel = {"ocel_source_id": src, "ocel_target_id": tgt, "ocel_qualifier": qualifier}
+        conn.executemany("INSERT INTO object_object VALUES (?, ?, ?)", [(src, tgt, qualifier)] * extras)
+        out.append(Injection(
+            "duplicate_o2o_relations", tier, flavor, "o2o", rel,
+            original=1, corrupted=1 + extras,
+            expected_rows=[{"issue": "duplicate_o2o_relations", **rel}],
+            accept={"mode": "delete_any_of", "keep": 1, **rel},
+        ))
+    return out
+
+
+def inject_duplicate_o2o_relations_comprises_easy(conn, picker):
+    """duplicate_o2o_relations Easy: an order→item `comprises` row recorded
+    three times."""
+    return _duplicate_o2o(conn, picker, tier="easy", flavor="comprises",
+                          qualifier="comprises", picks="ocel_target_id", extras=2)
+
+
+def inject_duplicate_o2o_relations_places_medium(conn, picker):
+    """duplicate_o2o_relations Medium: a customer→order `places` row
+    recorded twice."""
+    return _duplicate_o2o(conn, picker, tier="medium", flavor="places",
+                          qualifier="places", picks="ocel_target_id", extras=1)
+
+
+def inject_duplicate_o2o_relations_sales_rep_hard(conn, picker):
+    """duplicate_o2o_relations Hard: a customer's `primarySalesRep` row
+    recorded twice; the qualifier is rare (15 rows), so the copy could
+    pass for a second assignment."""
+    return _duplicate_o2o(conn, picker, tier="hard", flavor="sales_rep",
+                          qualifier="primarySalesRep", picks="ocel_source_id", extras=1)
 
 
 # ---------------------------------------------------------------------------
-# incorrect_o2o_relationship_qualifier (Easy/Hard)
+# o2o_self_loop (Easy/Medium/Hard) — an existing object linked to itself.
 # ---------------------------------------------------------------------------
 
 
-def inject_incorrect_o2o_relationship_qualifier_wrong_verb_easy(
-    conn: sqlite3.Connection,
-) -> tuple[str, str, str]:
-    """incorrect_o2o_relationship_qualifier Easy: Change 'comprises' to 'contains' (wrong verb).
-
-    Easy because 'comprises' is the standard qualifier for order→item, not 'contains'."""
-    row = conn.execute("""
-        SELECT ocel_source_id, ocel_target_id, ocel_qualifier
-        FROM object_object
-        WHERE ocel_qualifier = 'comprises'
-        LIMIT 1
-    """).fetchone()
-    if not row:
-        return "", "", ""
-    source_id, target_id, old_qual = row
-    new_qual = "contains"
-    conn.execute(
-        "UPDATE object_object SET ocel_qualifier = ? WHERE ocel_source_id = ? AND ocel_target_id = ? AND ocel_qualifier = ?",
-        (new_qual, source_id, target_id, old_qual),
-    )
-    return source_id, target_id, new_qual
+def _o2o_self_loop(
+    conn: sqlite3.Connection, picker: TargetPicker, *,
+    tier: str, flavor: str, ocel_type: str, qualifier: str,
+) -> list[Injection]:
+    out = []
+    for oid in picker.pick("SELECT ocel_id FROM object WHERE ocel_type = ?", (ocel_type,)):
+        rel = {"ocel_source_id": oid, "ocel_target_id": oid, "ocel_qualifier": qualifier}
+        conn.execute("INSERT INTO object_object VALUES (?, ?, ?)", (oid, oid, qualifier))
+        out.append(Injection(
+            "o2o_self_loop", tier, flavor, "o2o", rel,
+            original=None, corrupted=rel,
+            expected_rows=[{"issue": "o2o_self_loop", **rel}],
+            accept={"mode": "delete_any_of", "keep": 0, **rel},
+        ))
+    return out
 
 
-def inject_incorrect_o2o_relationship_qualifier_typo_hard(
-    conn: sqlite3.Connection,
-) -> tuple[str, str, str]:
-    """incorrect_o2o_relationship_qualifier Hard: Change 'primarySalesRep' to 'primarySalesRepresentative' (verbose variant).
+def inject_o2o_self_loop_order_easy(conn, picker):
+    """o2o_self_loop Easy: an order `comprises` itself."""
+    return _o2o_self_loop(conn, picker, tier="easy", flavor="order",
+                          ocel_type="orders", qualifier="comprises")
 
-    Hard because it's a plausible expansion that might be used inconsistently."""
-    row = conn.execute("""
-        SELECT ocel_source_id, ocel_target_id, ocel_qualifier
-        FROM object_object
-        WHERE ocel_qualifier = 'primarySalesRep'
-        LIMIT 1
-    """).fetchone()
-    if not row:
-        return "", "", ""
-    source_id, target_id, old_qual = row
-    new_qual = "primarySalesRepresentative"
-    conn.execute(
-        "UPDATE object_object SET ocel_qualifier = ? WHERE ocel_source_id = ? AND ocel_target_id = ? AND ocel_qualifier = ?",
-        (new_qual, source_id, target_id, old_qual),
-    )
-    return source_id, target_id, new_qual
+
+def inject_o2o_self_loop_employee_medium(conn, picker):
+    """o2o_self_loop Medium: an employee is their own `primarySalesRep` —
+    superficially plausible, still structurally wrong."""
+    return _o2o_self_loop(conn, picker, tier="medium", flavor="employee",
+                          ocel_type="employees", qualifier="primarySalesRep")
+
+
+def inject_o2o_self_loop_product_hard(conn, picker):
+    """o2o_self_loop Hard: a product `is a` itself; the qualifier is a real
+    item→product one, so only source = target gives it away."""
+    return _o2o_self_loop(conn, picker, tier="hard", flavor="product",
+                          ocel_type="products", qualifier="is a")
+
+
+RELATION_INJECTORS: dict[tuple[str, str], Callable[[sqlite3.Connection, TargetPicker], list[Injection]]] = {
+    ("dangling_e2o_relationship", "easy"):   inject_dangling_e2o_relationship_missing_object_easy,
+    ("dangling_e2o_relationship", "medium"): inject_dangling_e2o_relationship_missing_event,
+    ("dangling_e2o_relationship", "hard"):   inject_dangling_e2o_relationship_missing_both,
+    ("dangling_o2o_relationship", "easy"):   inject_dangling_o2o_relationship_missing_source,
+    ("dangling_o2o_relationship", "medium"): inject_dangling_o2o_relationship_missing_target,
+    ("dangling_o2o_relationship", "hard"):   inject_dangling_o2o_relationship_missing_both_typo,
+    ("missing_object", "easy"):              inject_missing_object_order_easy,
+    ("missing_object", "medium"):            inject_missing_object_item_medium,
+    ("missing_object", "hard"):              inject_missing_object_package_hard,
+    ("duplicate_e2o_relations", "easy"):     inject_duplicate_e2o_relations_order_easy,
+    ("duplicate_e2o_relations", "medium"):   inject_duplicate_e2o_relations_item_medium,
+    ("duplicate_e2o_relations", "hard"):     inject_duplicate_e2o_relations_sales_person_hard,
+    ("duplicate_o2o_relations", "easy"):     inject_duplicate_o2o_relations_comprises_easy,
+    ("duplicate_o2o_relations", "medium"):   inject_duplicate_o2o_relations_places_medium,
+    ("duplicate_o2o_relations", "hard"):     inject_duplicate_o2o_relations_sales_rep_hard,
+    ("o2o_self_loop", "easy"):               inject_o2o_self_loop_order_easy,
+    ("o2o_self_loop", "medium"):             inject_o2o_self_loop_employee_medium,
+    ("o2o_self_loop", "hard"):               inject_o2o_self_loop_product_hard,
+}

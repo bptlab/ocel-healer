@@ -728,6 +728,9 @@ def detect_missing_object(src: SqliteInput) -> pl.DataFrame:
                     break
             if inferred is None and ocel_qualifier in _qualifier_to_type:
                 inferred = _qualifier_to_type[ocel_qualifier]
+            # Multi-word qualifiers ending in the type (`shipped package`).
+            if inferred is None and isinstance(ocel_qualifier, str) and ocel_qualifier.split():
+                inferred = _qualifier_to_type.get(ocel_qualifier.split()[-1])
             if inferred is None:
                 # Opaque id (no prefix, no qualifier hint) → leave to the
                 # dangling detector; we'd only be guessing.
