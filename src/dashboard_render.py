@@ -578,12 +578,15 @@ def render_overview_table_html(
                 )
             else:
                 _content = pill_html(_spec["count"])
+            # Popovers are attached independently of the content branch so
+            # that button cells (dashboard) get the same hover as static ones.
+            if _cov and _kind in ("pending", "count"):
+                _popover = coverage_popover_html(_cov)
+            elif _kind == "count":
                 _n = _spec["count"]
                 _popover = simple_popover_html(
                     f'{_n} {"issue" if _n == 1 else "issues"} · click to open, click again to close'
                 )
-            if _cov and _kind in ("pending", "count"):
-                _popover = coverage_popover_html(_cov)
             elif _kind == "na":
                 _popover = simple_popover_html(
                     na_popover_text(_spec["row_label"])

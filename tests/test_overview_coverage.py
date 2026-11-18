@@ -135,6 +135,21 @@ def test_rule_cell_has_simple_popover():
     assert "proposed" not in html
 
 
+def test_rule_button_cell_keeps_simple_popover():
+    # Dashboard cells are marimo buttons; the hover card must still be attached.
+    spec = {"kind": "count", "count": 3, "row_label": "r", "col_label": "c",
+            "issue_key": "k", "coverage": None}
+    html = dr.render_overview_table_html(
+        rows=["r"],
+        col_groups=[("Events", ["c"])],
+        cols_flat=["c"],
+        cell_meta={"0:0": spec},
+        selected_issue_key=None,
+        cell_buttons={"0:0": "<button>3</button>"},
+    )
+    assert "<button>3</button>" in html
+    assert "3 issues · click to open, click again to close" in html
+
 def test_aborted_type_not_scanned():
     key = "missing_event_attribute"
     result = {(PATH, key, "Order"): {**_entry(2), "aborted": True}}
