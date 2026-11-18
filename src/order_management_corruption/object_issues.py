@@ -4,68 +4,32 @@ Covers all issues rooted in the `object` table and its per-type
 sub-tables (`object_<Type>`): missing/incorrect object types, missing or
 type-invalid attribute values, and duplicate objects.
 
-Each `inject_*` function introduces exactly one flavor and returns the
-affected id(s) so callers can log or reference them. Naming convention:
-`inject_<issue_key>_<flavor>`, where `<issue_key>` is the canonical
-detector name (e.g. `missing_object_type`, `duplicate_objects_on_ids`).
+Each `inject_<issue_key>_<flavor>(conn, picker)` corrupts `picker.n`
+seeded, non-overlapping targets and returns one `Injection` per target
+(never an empty list — the picker raises instead). `OBJECT_INJECTORS`
+maps ``(issue_key, tier)`` to the injector.
 """
 
 from __future__ import annotations
 
 import sqlite3
+from typing import Callable
 
 from src.order_management_corruption._common import (
+    NUMERIC_TOLERANCE,
+    Injection,
+    TargetPicker,
     _capture_and_update,
     _clone_object_row,
-    _null_type_for,
-    inject_missing_attribute_value,
-)
-from .om_schema import (
-    get_om_object_type,
-    get_om_object_table,
+    _remove_object_primary_key,
 )
 
 
-# ---------------------------------------------------------------------------
-# Base injectors — building blocks reused by the tiered flavors below.
-# ---------------------------------------------------------------------------
-
-
-def inject_duplicate_objects_on_ids(conn: sqlite3.Connection, ocel_id: str | None = None) -> str | None:
-    """duplicate_objects_on_ids: Insert a fully duplicated object row
-    (same ocel_id + ocel_type)."""
-    if ocel_id:
-        row = conn.execute(
-            "SELECT ocel_id, ocel_type FROM object WHERE ocel_id = ? LIMIT 1", (ocel_id,)
-        ).fetchone()
-    else:
-        row = conn.execute(
-            "SELECT ocel_id, ocel_type FROM object WHERE ocel_type IS NOT NULL LIMIT 1"
-        ).fetchone()
-    if row is None:
-        return None
-    conn.execute("INSERT INTO object VALUES (?, ?)", row)
-    return row[0]
-
-
-def inject_incorrect_object_type(
-    conn: sqlite3.Connection,
-    ocel_id: str,
-    incorrect_type: str,
-) -> dict | None:
-    """incorrect_object_type: Overwrite an object's ocel_type with an
-    incorrect-but-non-null value."""
-    row = conn.execute(
-        "SELECT ocel_type FROM object WHERE ocel_id = ?", (ocel_id,)
-    ).fetchone()
-    if row is None:
-        return None
-    old_type = row[0]
-    conn.execute(
-        "UPDATE object SET ocel_type = ? WHERE ocel_id = ?",
-        (incorrect_type, ocel_id),
-    )
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_type}}
+def _accept_value(value: object) -> dict:
+    """Repair rule for restoring a single attribute value."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return {"mode": "numeric_tol", "value": value, "tol": NUMERIC_TOLERANCE}
+    return {"mode": "exact", "value": value}
 
 
 # ---------------------------------------------------------------------------
@@ -73,134 +37,43 @@ def inject_incorrect_object_type(
 # ---------------------------------------------------------------------------
 
 
-def inject_missing_object_type_null_employee(conn: sqlite3.Connection) -> dict | None:
-    """missing_object_type Easy: NULL the ocel_type of a payment object."""
-    obj_type = get_om_object_type("employees")
-    row = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (obj_type,)
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    old_value = _capture_and_update(conn, "object", "ocel_type", ocel_id, None)
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
+def _missing_object_type(
+    conn: sqlite3.Connection, picker: TargetPicker, *,
+    tier: str, flavor: str, ocel_type: str, set_to: str | None,
+) -> list[Injection]:
+    out = []
+    for oid in picker.pick("SELECT ocel_id FROM object WHERE ocel_type = ?", (ocel_type,)):
+        old = _capture_and_update(conn, "object", "ocel_type", oid, set_to)
+        out.append(Injection(
+            "missing_object_type", tier, flavor, "object", oid,
+            original=old, corrupted=set_to,
+            expected_rows=[{"issue": "missing_object_type", "ocel_id": oid}],
+            accept={"mode": "exact", "value": old},
+        ))
+    return out
 
 
-def inject_missing_object_type_empty_string_order(conn: sqlite3.Connection) -> dict | None:
-    """missing_object_type Medium: Set ocel_type to '' on a purchase order."""
-    obj_type = get_om_object_type("orders")
-    row = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (obj_type,)
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    old_value = _capture_and_update(conn, "object", "ocel_type", ocel_id, "")
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
+def inject_missing_object_type_null_employee(conn, picker):
+    """missing_object_type Easy: NULL the ocel_type of an employee."""
+    return _missing_object_type(conn, picker, tier="easy", flavor="null_employee",
+                                ocel_type="employees", set_to=None)
 
 
-def inject_missing_object_type_whitespace_product(conn: sqlite3.Connection) -> dict | None:
-    """missing_object_type Hard: Set ocel_type to a whitespace-only string
-    on a material."""
-    obj_type = get_om_object_type("products")
-    row = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (obj_type,)
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    old_value = _capture_and_update(conn, "object", "ocel_type", ocel_id, "   ")
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
+def inject_missing_object_type_empty_string_order(conn, picker):
+    """missing_object_type Medium: set an order's ocel_type to ''."""
+    return _missing_object_type(conn, picker, tier="medium", flavor="empty_string_order",
+                                ocel_type="orders", set_to="")
+
+
+def inject_missing_object_type_whitespace_product(conn, picker):
+    """missing_object_type Hard: set a product's ocel_type to whitespace."""
+    return _missing_object_type(conn, picker, tier="hard", flavor="whitespace_product",
+                                ocel_type="products", set_to="   ")
 
 
 # ---------------------------------------------------------------------------
-# missing_attribute_value (Easy/Medium/Hard)
-# ---------------------------------------------------------------------------
-
-
-def inject_missing_attribute_value_null_product_weight(conn: sqlite3.Connection) -> dict:
-    """missing_attribute_value Easy: NULL the weight of a material."""
-    table = get_om_object_table("object_products")
-    row = conn.execute(
-        f"SELECT ocel_id FROM {table} WHERE weight IS NOT NULL LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return {"affected_ids": [], "original_values": {}}
-    ocel_id = row[0]
-    old_value = _capture_and_update(conn, table, "weight", ocel_id, None)
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
-
-
-def inject_missing_attribute_value_empty_string_role(conn: sqlite3.Connection) -> dict:
-    """missing_attribute_value Medium: Set employee role to empty string."""
-    table = get_om_object_table("object_employees")
-    row = conn.execute(
-        f"SELECT ocel_id FROM {table} WHERE role IS NOT NULL LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return {"affected_ids": [], "original_values": {}}
-    ocel_id = row[0]
-    old_value = _capture_and_update(conn, table, "role", ocel_id, "")
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
-
-
-def inject_missing_attribute_value_null_order_price(conn: sqlite3.Connection) -> dict:
-    """missing_attribute_value Hard: NULL price field in order."""
-    table = get_om_object_table("object_orders")
-    row = conn.execute(
-        f"SELECT ocel_id FROM {table} WHERE price IS NOT NULL LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return {"affected_ids": [], "original_values": {}}
-    ocel_id = row[0]
-    old_value = _capture_and_update(conn, table, "price", ocel_id, None)
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
-
-
-# ---------------------------------------------------------------------------
-# incorrect_object_type (LLM-detected, Easy/Medium/Hard)
-# ---------------------------------------------------------------------------
-
-
-def inject_incorrect_object_type_swap_order_to_employee(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_object_type Easy: Retype purchase_order as payment."""
-    orders_type = get_om_object_type("orders")
-    employee_type = get_om_object_type("employees")
-    row = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (orders_type,)
-    ).fetchone()
-    if row is None:
-        return None
-    return inject_incorrect_object_type(conn, row[0], employee_type)
-
-
-def inject_incorrect_object_type_swap_item_to_product(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_object_type Medium: Retype item as a different object type."""
-    items_type = get_om_object_type("items")
-    products_type = get_om_object_type("products")
-    row = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (items_type,)
-    ).fetchone()
-    if row is None:
-        return None
-    # Use quotation as a clearly different type
-    return inject_incorrect_object_type(conn, row[0], "quotation")
-
-
-def inject_incorrect_object_type_case_variant_customers(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_object_type Hard: Retype purchase_requisition with case variant."""
-    customers_type = get_om_object_type("customers")
-    row = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (customers_type,)
-    ).fetchone()
-    if row is None:
-        return None
-    # Create case variant - uppercase
-    return inject_incorrect_object_type(conn, row[0], "PURCHASE_REQUISITION")
-
-
-# ---------------------------------------------------------------------------
-# incorrect_attribute_datatype (Easy/Medium/Hard)
+# Attribute-value corruptions on initial-state rows:
+# missing_attribute_value and incorrect_attribute_datatype (Easy/Medium/Hard)
 #
 # SQLite type affinity coerces most naive datatype mismatches (e.g. '42' in
 # an INTEGER column becomes int 42). The reliable recipes are:
@@ -209,48 +82,119 @@ def inject_incorrect_object_type_case_variant_customers(conn: sqlite3.Connection
 # ---------------------------------------------------------------------------
 
 
-def inject_incorrect_attribute_datatype_string_in_weight(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_attribute_datatype Easy: Put `'unknown'` into
-    product weight (REAL)."""
-    table = get_om_object_table("object_products")
-    row = conn.execute(
-        f"SELECT ocel_id FROM {table} WHERE weight IS NOT NULL LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    old_value = _capture_and_update(conn, table, "weight", ocel_id, "unknown")
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
-
-
-def inject_incorrect_attribute_datatype_string_in_order_price(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_attribute_datatype Medium: Put 'TBD' into order price (REAL expecting numeric)."""
-    table = get_om_object_table("object_Orders")
-    row = conn.execute(
-        f"SELECT ocel_id FROM {table} WHERE price IS NOT NULL LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    old_value = _capture_and_update(conn, table, "price", ocel_id, "TBD")
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
-
-
-def inject_incorrect_attribute_datatype_blob_in_role(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_attribute_datatype Hard: Put UTF-16-LE bytes into
-    employee role field (TEXT).
-    Example: employee gets UTF-16-LE encoded role."""
-    table = get_om_object_table("object_employees")
-    row = conn.execute(
-        f"SELECT ocel_id FROM {table} WHERE role IS NOT NULL LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    old_value = _capture_and_update(
-        conn, table, "role", ocel_id, "manager".encode("utf-16-le")
+def _corrupt_attribute(
+    conn: sqlite3.Connection, picker: TargetPicker, *,
+    issue: str, tier: str, flavor: str, object_type: str, table: str, column: str,
+    corrupt: Callable[[object], object],
+) -> list[Injection]:
+    out = []
+    ids = picker.pick(
+        f'SELECT ocel_id FROM "{table}" '
+        f'WHERE ocel_changed_field IS NULL AND "{column}" IS NOT NULL'
     )
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
+    for oid in ids:
+        old = conn.execute(
+            f'SELECT "{column}" FROM "{table}" WHERE ocel_id = ? AND ocel_changed_field IS NULL',
+            (oid,),
+        ).fetchone()[0]
+        new = corrupt(old)
+        _capture_and_update(conn, table, column, oid, new, where_initial=True)
+        out.append(Injection(
+            issue, tier, flavor, "object_attr", oid,
+            original={"object_type": object_type, "attribute": column, "value": old},
+            corrupted=new,
+            expected_rows=[{"issue": issue, "ocel_id": oid, "attribute": column}],
+            accept=_accept_value(old),
+        ))
+    return out
+
+
+def inject_missing_attribute_value_null_product_weight(conn, picker):
+    """missing_attribute_value Easy: NULL a product's weight."""
+    return _corrupt_attribute(conn, picker, issue="missing_attribute_value", tier="easy",
+                              flavor="null_product_weight", object_type="products",
+                              table="object_Products", column="weight", corrupt=lambda v: None)
+
+
+def inject_missing_attribute_value_empty_string_role(conn, picker):
+    """missing_attribute_value Medium: set an employee's role to ''."""
+    return _corrupt_attribute(conn, picker, issue="missing_attribute_value", tier="medium",
+                              flavor="empty_string_role", object_type="employees",
+                              table="object_Employees", column="role", corrupt=lambda v: "")
+
+
+def inject_missing_attribute_value_null_order_price(conn, picker):
+    """missing_attribute_value Hard: NULL an order's price."""
+    return _corrupt_attribute(conn, picker, issue="missing_attribute_value", tier="hard",
+                              flavor="null_order_price", object_type="orders",
+                              table="object_Orders", column="price", corrupt=lambda v: None)
+
+
+def inject_incorrect_attribute_datatype_string_in_weight(conn, picker):
+    """incorrect_attribute_datatype Easy: 'unknown' in a product's weight (REAL)."""
+    return _corrupt_attribute(conn, picker, issue="incorrect_attribute_datatype", tier="easy",
+                              flavor="string_in_weight", object_type="products",
+                              table="object_Products", column="weight", corrupt=lambda v: "unknown")
+
+
+def inject_incorrect_attribute_datatype_string_in_order_price(conn, picker):
+    """incorrect_attribute_datatype Medium: 'TBD' in an order's price (REAL)."""
+    return _corrupt_attribute(conn, picker, issue="incorrect_attribute_datatype", tier="medium",
+                              flavor="string_in_order_price", object_type="orders",
+                              table="object_Orders", column="price", corrupt=lambda v: "TBD")
+
+
+def inject_incorrect_attribute_datatype_blob_in_role(conn, picker):
+    """incorrect_attribute_datatype Hard: an employee's own role stored as
+    UTF-16-LE bytes (BLOB) in the TEXT column."""
+    return _corrupt_attribute(conn, picker, issue="incorrect_attribute_datatype", tier="hard",
+                              flavor="blob_in_role", object_type="employees",
+                              table="object_Employees", column="role",
+                              corrupt=lambda v: v.encode("utf-16-le"))
+
+
+# ---------------------------------------------------------------------------
+# incorrect_object_type (LLM-detected, Easy/Medium/Hard)
+#
+# Only OM types that have a sub-table are used, so no rule detector fires.
+# The LLM sweep is scoped by type: the harness sweeps the type the object
+# was moved *to*, recorded as `ocel_type` in `expected_rows`.
+# ---------------------------------------------------------------------------
+
+
+def _incorrect_object_type(
+    conn: sqlite3.Connection, picker: TargetPicker, *,
+    tier: str, flavor: str, from_type: str, to_type: str,
+) -> list[Injection]:
+    out = []
+    for oid in picker.pick("SELECT ocel_id FROM object WHERE ocel_type = ?", (from_type,)):
+        _capture_and_update(conn, "object", "ocel_type", oid, to_type)
+        out.append(Injection(
+            "incorrect_object_type", tier, flavor, "object", oid,
+            original=from_type, corrupted=to_type,
+            expected_rows=[{"issue": "incorrect_object_type", "ocel_id": oid, "ocel_type": to_type}],
+            accept={"mode": "exact", "value": from_type},
+        ))
+    return out
+
+
+def inject_incorrect_object_type_order_to_employee(conn, picker):
+    """incorrect_object_type Easy: retype an order as an employee."""
+    return _incorrect_object_type(conn, picker, tier="easy", flavor="order_to_employee",
+                                  from_type="orders", to_type="employees")
+
+
+def inject_incorrect_object_type_item_to_product(conn, picker):
+    """incorrect_object_type Medium: retype an item as a product."""
+    return _incorrect_object_type(conn, picker, tier="medium", flavor="item_to_product",
+                                  from_type="items", to_type="products")
+
+
+def inject_incorrect_object_type_package_to_item(conn, picker):
+    """incorrect_object_type Hard: retype a package as an item — an existing
+    type whose E2O/O2O pattern contradicts it."""
+    return _incorrect_object_type(conn, picker, tier="hard", flavor="package_to_item",
+                                  from_type="packages", to_type="items")
 
 
 # ---------------------------------------------------------------------------
@@ -258,42 +202,44 @@ def inject_incorrect_attribute_datatype_blob_in_role(conn: sqlite3.Connection) -
 # ---------------------------------------------------------------------------
 
 
-def inject_duplicate_objects_on_ids_product(conn: sqlite3.Connection) -> str | None:
-    """duplicate_objects_on_ids Easy: Duplicate a material row in object."""
-    products_type = get_om_object_type("products")
-    row = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (products_type,)
-    ).fetchone()
-    if row is None:
-        return None
-    return inject_duplicate_objects_on_ids(conn, ocel_id=row[0])
+def _duplicate_object_ids(
+    conn: sqlite3.Connection, picker: TargetPicker, *,
+    tier: str, flavor: str, ocel_type: str, extra_types: list[str | None],
+) -> list[Injection]:
+    _remove_object_primary_key(conn)
+    out = []
+    for oid in picker.pick("SELECT ocel_id FROM object WHERE ocel_type = ?", (ocel_type,)):
+        conn.executemany("INSERT INTO object VALUES (?, ?)", [(oid, t) for t in extra_types])
+        expected = [{"issue": "duplicate_objects_on_ids", "ocel_id": oid}]
+        if None in extra_types:
+            expected.append({"issue": "missing_object_type", "ocel_id": oid})
+        out.append(Injection(
+            "duplicate_objects_on_ids", tier, flavor, "object", oid,
+            original={"ocel_type": ocel_type},
+            corrupted={"added_types": extra_types},
+            expected_rows=expected,
+            accept={"mode": "delete_any_of", "ids": [oid], "keep": {"ocel_type": ocel_type}},
+        ))
+    return out
 
 
-def inject_duplicate_objects_on_ids_conflicting_types(conn: sqlite3.Connection) -> str | None:
-    """duplicate_objects_on_ids Medium: Insert purchase_order with conflicting material type."""
-    orders_type = get_om_object_type("orders")
-    items_type = get_om_object_type("items")
-    row = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (orders_type,)
-    ).fetchone()
-    if row is None:
-        return None
-    conn.execute("INSERT INTO object VALUES (?, ?)", (row[0], items_type))
-    return row[0]
+def inject_duplicate_objects_on_ids_product(conn, picker):
+    """duplicate_objects_on_ids Easy: an identical copy of a product's object row."""
+    return _duplicate_object_ids(conn, picker, tier="easy", flavor="product",
+                                 ocel_type="products", extra_types=["products"])
 
 
-def inject_duplicate_objects_on_ids_triple_null_type(conn: sqlite3.Connection) -> str | None:
-    """duplicate_objects_on_ids Hard: Add two extra rows for one purchase requisition, one with NULL type."""
-    customers_type = get_om_object_type("customers")
-    row = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (customers_type,)
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    conn.execute("INSERT INTO object VALUES (?, ?)", (ocel_id, None))
-    conn.execute("INSERT INTO object VALUES (?, ?)", (ocel_id, customers_type))
-    return ocel_id
+def inject_duplicate_objects_on_ids_conflicting_types(conn, picker):
+    """duplicate_objects_on_ids Medium: a copy of an order row typed as items."""
+    return _duplicate_object_ids(conn, picker, tier="medium", flavor="conflicting_types",
+                                 ocel_type="orders", extra_types=["items"])
+
+
+def inject_duplicate_objects_on_ids_triple_null_type(conn, picker):
+    """duplicate_objects_on_ids Hard: two extra rows for a customer, one with
+    a NULL type (also a declared `missing_object_type` hit)."""
+    return _duplicate_object_ids(conn, picker, tier="hard", flavor="triple_null_type",
+                                 ocel_type="customers", extra_types=[None, "customers"])
 
 
 # ---------------------------------------------------------------------------
@@ -301,128 +247,78 @@ def inject_duplicate_objects_on_ids_triple_null_type(conn: sqlite3.Connection) -
 # ---------------------------------------------------------------------------
 
 
-def inject_duplicate_objects_on_attributes_clone_product(conn: sqlite3.Connection) -> str | None:
-    """duplicate_objects_on_attributes Easy: Clone a material's initial-state
-    row under a fabricated id."""
-    products_type = get_om_object_type("products")
-    table = get_om_object_table("object_products")
-    row = conn.execute(
-        f"SELECT ocel_id FROM {table} LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return None
-    return _clone_object_row(
-        conn,
-        source_id=row[0],
-        clone_id=f"{row[0]}-CLONE",
-        ocel_type=products_type,
-        table=table,
-    )
+def _duplicate_object_attributes(
+    conn: sqlite3.Connection, picker: TargetPicker, *,
+    tier: str, flavor: str, ocel_type: str, table: str,
+    clone_id: Callable[[str], str], copy_e2o: bool = False,
+) -> list[Injection]:
+    out = []
+    for oid in picker.pick("SELECT ocel_id FROM object WHERE ocel_type = ?", (ocel_type,)):
+        clone = clone_id(oid)
+        picker.touch(clone)
+        _clone_object_row(conn, source_id=oid, clone_id=clone, ocel_type=ocel_type, table=table)
+        e2o = []
+        if copy_e2o:
+            e2o = conn.execute(
+                "SELECT ocel_event_id, ocel_qualifier FROM event_object WHERE ocel_object_id = ?",
+                (oid,),
+            ).fetchall()
+            conn.executemany(
+                "INSERT INTO event_object (ocel_event_id, ocel_object_id, ocel_qualifier) "
+                "VALUES (?, ?, ?)",
+                [(ev, clone, q) for ev, q in e2o],
+            )
+        out.append(Injection(
+            "duplicate_objects_on_attributes", tier, flavor, "object", [oid, clone],
+            original={"ocel_id": oid},
+            corrupted={"clone_id": clone, "copied_e2o": len(e2o)},
+            expected_rows=[{"issue": "duplicate_objects_on_attributes", "ocel_ids": [oid, clone]}],
+            accept={"mode": "delete_any_of", "ids": [oid, clone]},
+        ))
+    return out
 
 
-def inject_duplicate_objects_on_attributes_clone_employee(conn: sqlite3.Connection) -> str | None:
-    """duplicate_objects_on_attributes Medium: Insert two employee objects with
-    same attributes - simulating duplicate master data records.
-    Example: 'Ada Nowak' and 'Ada Nowak (dup)' with identical consulting role."""
-    employee_type = get_om_object_type("employees")
-    table = get_om_object_table("object_employees")
-
-    original = "employee:original"
-    clone = "employee:clone"
-    fingerprint_time = "2023-04-03 01:00:00"
-    role_value = "manager"
-
-    conn.execute("INSERT INTO object VALUES (?, ?)", (original, employee_type))
-    conn.execute("INSERT INTO object VALUES (?, ?)", (clone, employee_type))
-    conn.execute(
-        f'INSERT INTO {table} (ocel_id, ocel_time, ocel_changed_field, role) '
-        "VALUES (?, ?, NULL, ?)",
-        (original, fingerprint_time, role_value),
-    )
-    conn.execute(
-        f'INSERT INTO {table} (ocel_id, ocel_time, ocel_changed_field, role) '
-        "VALUES (?, ?, NULL, ?)",
-        (clone, fingerprint_time, role_value),
-    )
-    return clone
+def inject_duplicate_objects_on_attributes_clone_product(conn, picker):
+    """duplicate_objects_on_attributes Easy: clone a product's initial-state
+    row under a near-miss name."""
+    return _duplicate_object_attributes(conn, picker, tier="easy", flavor="clone_product",
+                                        ocel_type="products", table="object_Products",
+                                        clone_id=picker.near_miss)
 
 
-def inject_duplicate_objects_on_attributes_clone_order_and_referenced(conn: sqlite3.Connection) -> list[str]:
-    """duplicate_objects_on_attributes Hard: Clone a purchase order AND copy its
-    event_object rows."""
-    orders_type = get_om_object_type("orders")
-    table = get_om_object_table("object_orders")
-    qualifier = get_om_object_type("orders")
-
-    row = conn.execute(
-        f"SELECT ocel_id FROM {table} LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return []
-
-    original = row[0]
-    clone = f"{original}-DUP"
-
-    if not _clone_object_row(
-        conn,
-        source_id=original,
-        clone_id=clone,
-        ocel_type=orders_type,
-        table=table,
-    ):
-        return []
-    conn.execute(
-        "INSERT INTO event_object (ocel_event_id, ocel_object_id, ocel_qualifier) "
-        "SELECT ocel_event_id, ?, ocel_qualifier FROM event_object "
-        "WHERE ocel_object_id = ?",
-        (clone, original),
-    )
-    return [original, clone]
+def inject_duplicate_objects_on_attributes_clone_employee(conn, picker):
+    """duplicate_objects_on_attributes Medium: clone an employee under a
+    near-miss name — duplicate master data."""
+    return _duplicate_object_attributes(conn, picker, tier="medium", flavor="clone_employee",
+                                        ocel_type="employees", table="object_Employees",
+                                        clone_id=picker.near_miss)
 
 
-# ---------------------------------------------------------------------------
-# incorrect_object_attribute_value (LLM detection, Easy/Hard)
-# ---------------------------------------------------------------------------
+def inject_duplicate_objects_on_attributes_clone_order_and_referenced(conn, picker):
+    """duplicate_objects_on_attributes Hard: clone an order under the next
+    free order id and copy its E2O rows."""
+    return _duplicate_object_attributes(conn, picker, tier="hard", flavor="clone_order_and_referenced",
+                                        ocel_type="orders", table="object_Orders",
+                                        clone_id=lambda _: picker.new_id("o-"), copy_e2o=True)
 
 
-def inject_incorrect_object_attribute_value_negative_weight_easy(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_object_attribute_value Easy: Set material quantity to -999 (obviously wrong)."""
-    table = get_om_object_table("object_products")
-    row = conn.execute(
-        f"SELECT ocel_id FROM {table} WHERE QuantityEKPOMENGE > 0 LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    old_value = _capture_and_update(conn, table, "QuantityEKPOMENGE", ocel_id, -999)
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
-
-
-def inject_incorrect_object_attribute_value_implausible_weight_hard(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_object_attribute_value Hard: Set product price to 999999 (plausible format but wrong)."""
-    table = get_om_object_table("object_products")
-    row = conn.execute(
-        f"SELECT ocel_id FROM {table} WHERE price > 0 AND price < 1000 LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    old_value = _capture_and_update(conn, table, "price", ocel_id, 999999)
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
-
-
-# ---------------------------------------------------------------------------
-# missing_object_attribute (LLM detection, Easy/Hard)
-# Note: These require schema changes (DROP COLUMN) which are complex in SQLite.
-# Marking as not implemented for now - would need ALTER TABLE workarounds.
-# ---------------------------------------------------------------------------
-
-
-def inject_missing_object_attribute_drop_price_easy(conn: sqlite3.Connection) -> str | None:
-    """missing_object_attribute Easy: Drop price column from Products (schema change - not implemented)."""
-    return None
-
-
-def inject_missing_object_attribute_drop_optional_hard(conn: sqlite3.Connection) -> str | None:
-    """missing_object_attribute Hard: Drop optional column (schema change - not implemented)."""
-    return None
+OBJECT_INJECTORS: dict[tuple[str, str], Callable[[sqlite3.Connection, TargetPicker], list[Injection]]] = {
+    ("missing_object_type", "easy"):              inject_missing_object_type_null_employee,
+    ("missing_object_type", "medium"):            inject_missing_object_type_empty_string_order,
+    ("missing_object_type", "hard"):              inject_missing_object_type_whitespace_product,
+    ("missing_attribute_value", "easy"):          inject_missing_attribute_value_null_product_weight,
+    ("missing_attribute_value", "medium"):        inject_missing_attribute_value_empty_string_role,
+    ("missing_attribute_value", "hard"):          inject_missing_attribute_value_null_order_price,
+    ("incorrect_attribute_datatype", "easy"):     inject_incorrect_attribute_datatype_string_in_weight,
+    ("incorrect_attribute_datatype", "medium"):   inject_incorrect_attribute_datatype_string_in_order_price,
+    ("incorrect_attribute_datatype", "hard"):     inject_incorrect_attribute_datatype_blob_in_role,
+    ("incorrect_object_type", "easy"):            inject_incorrect_object_type_order_to_employee,
+    ("incorrect_object_type", "medium"):          inject_incorrect_object_type_item_to_product,
+    ("incorrect_object_type", "hard"):            inject_incorrect_object_type_package_to_item,
+    ("duplicate_objects_on_ids", "easy"):         inject_duplicate_objects_on_ids_product,
+    ("duplicate_objects_on_ids", "medium"):       inject_duplicate_objects_on_ids_conflicting_types,
+    ("duplicate_objects_on_ids", "hard"):         inject_duplicate_objects_on_ids_triple_null_type,
+    ("duplicate_objects_on_attributes", "easy"):  inject_duplicate_objects_on_attributes_clone_product,
+    ("duplicate_objects_on_attributes", "medium"): inject_duplicate_objects_on_attributes_clone_employee,
+    ("duplicate_objects_on_attributes", "hard"):  inject_duplicate_objects_on_attributes_clone_order_and_referenced,
+}

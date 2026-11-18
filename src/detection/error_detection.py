@@ -446,12 +446,16 @@ def detect_duplicate_events_on_ids(src: SqliteInput) -> pl.DataFrame:
 
 
 def detect_duplicate_events_on_attributes(src: SqliteInput) -> pl.DataFrame:
-    """Find events within the same type-table that share identical attribute
-    values but carry different ocel_ids.
+    """Find events within the same type-table that share identical
+    ``ocel_time`` and attribute values but carry different ocel_ids.
 
-    Direct event-side mirror of :func:`detect_duplicate_objects_on_attributes`.
-    One row is emitted per duplicate group; ``ocel_ids`` lists every id
-    that shares the same attribute fingerprint (comma-separated).
+    Unlike :func:`detect_duplicate_objects_on_attributes`, the fingerprint
+    includes the timestamp: events of one type routinely share attribute
+    values (same employee, same amount), so only a matching time makes
+    them look like a double recording. Events without a time are skipped
+    (a missing time is ``missing_event_timestamp``, not a match). One row
+    is emitted per duplicate group; ``ocel_ids`` lists every id sharing
+    the fingerprint (comma-separated).
     """
     with _connect(src) as conn:
         rows: list[dict] = []
@@ -459,6 +463,7 @@ def detect_duplicate_events_on_attributes(src: SqliteInput) -> pl.DataFrame:
             attr_cols = [c for c, _ in _column_info(conn, table)]
             if not attr_cols:
                 continue
+            attr_cols = ["ocel_time", *attr_cols]
             quoted = ", ".join(f'"{c}"' for c in attr_cols)
             raw = conn.execute(
                 f'SELECT ocel_id, {quoted} FROM "{table}"'
@@ -466,6 +471,8 @@ def detect_duplicate_events_on_attributes(src: SqliteInput) -> pl.DataFrame:
 
             groups: dict[tuple, list[str]] = {}
             for ocel_id, *values in raw:
+                if _is_missing(values[0]):
+                    continue
                 key = tuple(values)
                 groups.setdefault(key, []).append(ocel_id)
 

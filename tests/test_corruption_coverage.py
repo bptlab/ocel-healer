@@ -41,9 +41,11 @@ RULE_DETECTORS = (
 # injectors don't yet produce event-attribute defects. Adding those
 # injectors would extend both this tuple and the coverage tests below.
 
-# Counts on the pristine clean DB.  Only `duplicate_objects_on_attributes` is
-# non-zero — OCEL change rows legitimately share (time, changed_field, value)
-# fingerprints, so the detector picks them up as attribute duplicates.
+# Counts on the pristine (enriched) clean DB.  Two detectors are non-zero:
+# `duplicate_objects_on_attributes` — OCEL change rows legitimately share
+# (time, changed_field, value) fingerprints; `duplicate_events_on_attributes`
+# — two pick item and two send package events coincide in time and resource
+# in the source log while touching different objects.
 CLEAN_BASELINE = {
     "missing_object_type":               0,
     "missing_attribute_value":           0,
@@ -55,7 +57,7 @@ CLEAN_BASELINE = {
     "duplicate_objects_on_ids":          0,
     "duplicate_objects_on_attributes":   384,
     "duplicate_events_on_ids":           0,
-    "duplicate_events_on_attributes":    0,
+    "duplicate_events_on_attributes":    2,
     "incorrect_attribute_datatype":      0,
     "incorrect_event_attribute_datatype": 0,
     "dangling_o2o_relationship":         0,
@@ -70,9 +72,31 @@ def _counts(path: str) -> dict[str, int]:
     return {k: v.height for k, v in detect_all(path).items()}
 
 
+def _rows(path: str) -> dict[str, set[tuple]]:
+    return {
+        k: {tuple(sorted((c, str(v)) for c, v in r.items())) for r in df.to_dicts()}
+        for k, df in detect_all(path).items()
+    }
+
+
 @pytest.fixture(scope="module")
 def clean_counts() -> dict[str, int]:
     return _counts(DEFAULT_CLEAN_PATH)
+
+
+@pytest.fixture(scope="module")
+def clean_rows() -> dict[str, set[tuple]]:
+    return _rows(DEFAULT_CLEAN_PATH)
+
+
+@pytest.fixture(scope="module")
+def dirty_new_rows(dirty_paths, clean_rows) -> dict[str, dict[str, set[tuple]]]:
+    """Per level: detector rows absent from the baseline output. Compared by
+    identity, not counts, so a clone joining an existing group counts too."""
+    return {
+        level: {k: rows - clean_rows[k] for k, rows in _rows(path).items()}
+        for level, path in dirty_paths.items()
+    }
 
 
 @pytest.fixture(scope="module")
@@ -92,24 +116,14 @@ def test_clean_baseline(clean_counts):
 
 @pytest.mark.parametrize("level", ["easy", "medium", "hard"])
 @pytest.mark.parametrize("detector", RULE_DETECTORS)
-def test_tier_triggers_each_detector(dirty_paths, level, detector):
-    """Every tier fires every rule-based detector at least once above baseline."""
-    counts = _counts(dirty_paths[level])
-    assert counts[detector] >= CLEAN_BASELINE[detector] + 1, (
-        f"level={level} detector={detector}: got {counts[detector]}, "
-        f"expected >= {CLEAN_BASELINE[detector] + 1}. Full counts: {counts}"
-    )
+def test_tier_triggers_each_detector(dirty_new_rows, level, detector):
+    """Every tier fires every rule-based detector with at least one new row."""
+    new = dirty_new_rows[level][detector]
+    assert len(new) >= 1, f"level={level} detector={detector}: no new rows"
 
 
 @pytest.mark.parametrize("detector", RULE_DETECTORS)
-def test_all_level_triggers_each_detector(dirty_paths, detector):
-    """`level='all'` produces at least 3 rows per detector above baseline."""
-    counts = _counts(dirty_paths["all"])
-    # duplicate_objects_on_ids from `duplicate_objects_on_ids_triple_null_type`
-    # counts as a single group of size 3, so the detector row-count
-    # contribution is 1 (one group), not 3 — total >= 3 groups (one per flavor).
-    expected_new = 3
-    assert counts[detector] >= CLEAN_BASELINE[detector] + expected_new, (
-        f"detector={detector}: got {counts[detector]}, "
-        f"expected >= {CLEAN_BASELINE[detector] + expected_new}. Full counts: {counts}"
-    )
+def test_all_level_triggers_each_detector(dirty_new_rows, detector):
+    """`level='all'` produces at least 3 new rows per detector (one per tier)."""
+    new = dirty_new_rows["all"][detector]
+    assert len(new) >= 3, f"detector={detector}: only {len(new)} new row(s)"
