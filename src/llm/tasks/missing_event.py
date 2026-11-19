@@ -51,11 +51,11 @@ class MissingEvent(ResolutionTask):
                                       the lifecycle window the missing
                                       event should slot into
         - candidate_types             the closed list of valid event types
-        - event_links                 every surviving event_object row of
-                                      the missing event: the objects it
+        - event_links                 up to 10 surviving event_object rows
+                                      of the missing event: the objects it
                                       touched, their types and qualifiers
         - type_attributes             per candidate type: its attribute
-                                      columns and up to 3 example rows
+                                      columns
     """
 
     METHOD = """
@@ -74,11 +74,9 @@ class MissingEvent(ResolutionTask):
            the timestamps of the object's other events (same object
            lifecycle order as `missing_event_timestamp`). Match the
            format verbatim.
-        5. Fill the chosen type's other columns from `event_links` and the
-           examples in `type_attributes`: a column that holds employee
-           names (e.g. `resource`) usually names the employee linked in
-           `event_links`; a column that is constant across the examples
-           (e.g. `resource = 'system'`) takes that constant.
+        5. Fill the chosen type's other columns from `event_links`: a
+           column that holds a person (e.g. `resource`) usually names the
+           employee linked in `event_links`.
         6. Return `ocel_type: null` when the evidence is genuinely opaque
            (no id keyword, no qualifier hint, no lifecycle gap).
     """
@@ -106,7 +104,7 @@ class MissingEvent(ResolutionTask):
         candidate_types = ['create package', 'send package', ...]
         event_links = [{ocel_object_id: 'Detlef Wetzeler',
                         ocel_type: 'employees', qualifier: 'packer'}, ...]
-        type_attributes = {'create package': {columns: ['resource'], ...}}
+        type_attributes = {'create package': ['resource'], ...}
         → {"ocel_type": "create package",
            "attributes": {"ocel_time": "2023-04-04 08:00:00",
                           "resource": "Detlef Wetzeler"},
@@ -132,26 +130,17 @@ class MissingEvent(ResolutionTask):
         # Stash the map so parse_payload can look up the target sub-table.
         row[self._TYPE_MAP_KEY] = type_map
 
-        # What a complete row of each type looks like.
+        # The columns a complete row of each type has. Kept to names only:
+        # example rows made the prompt too long for small models.
         columns = {t: [c for c, _ in _column_info(conn, table)] for t, table in type_map.items()}
         row[self._COLUMNS_KEY] = columns
-        ctx["type_attributes"] = {}
-        for t, table in type_map.items():
-            cols = ["ocel_time", *columns[t]]
-            examples = conn.execute(
-                f'SELECT {", ".join(f"{chr(34)}{c}{chr(34)}" for c in cols)} '
-                f'FROM "{table}" LIMIT 3'
-            ).fetchall()
-            ctx["type_attributes"][t] = {
-                "columns": columns[t],
-                "examples": [dict(zip(cols, e)) for e in examples],
-            }
+        ctx["type_attributes"] = columns
 
-        # Everything the missing event touched, not just the reported row.
+        # What the missing event touched, not just the reported row.
         links = conn.execute(
             "SELECT eo.ocel_object_id, o.ocel_type, eo.ocel_qualifier "
             "FROM event_object eo LEFT JOIN object o ON o.ocel_id = eo.ocel_object_id "
-            "WHERE eo.ocel_event_id = ? LIMIT 40",
+            "WHERE eo.ocel_event_id = ? LIMIT 10",
             (row.get("ocel_event_id"),),
         ).fetchall()
         ctx["event_links"] = [
