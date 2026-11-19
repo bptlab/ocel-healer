@@ -41,6 +41,9 @@ class ActionResult:
                             (holding a SQLite affinity token) are populated;
                             existing rows keep NULL and are picked up by the
                             downstream `missing_*_attribute_value` detectors.
+      "batch"            -- several update / delete / delete_all steps (see
+                            `steps`) that only make sense together, e.g.
+                            moving a duplicate's relations and deleting it.
       "decline"          -- LLM said null; orchestrator attaches a routable target
                             (via task.suppressed_target) so override still works.
       "unrouted"         -- no clean override target (e.g. duplicate_objects_on_ids).
@@ -55,6 +58,8 @@ class ActionResult:
     # Only populated when kind == "insert". Each entry:
     #   {"table": str, "columns": dict[column_name, value]}
     inserts: list[dict] = field(default_factory=list)
+    # Only populated when kind == "batch": the steps, applied in order.
+    steps: list["ActionResult"] = field(default_factory=list)
 
     @classmethod
     def update(cls, **fields: Any) -> "ActionResult":
@@ -101,6 +106,11 @@ class ActionResult:
             new_value=affinity,
             reason=reason,
         )
+
+    @classmethod
+    def batch(cls, *, steps: list["ActionResult"], reason: str = "") -> "ActionResult":
+        """Apply several update / delete / delete_all steps in order."""
+        return cls(kind="batch", reason=reason, steps=list(steps))
 
     @classmethod
     def decline(cls, reason: str) -> "ActionResult":
@@ -250,7 +260,16 @@ def from_task_result(task, row: dict, payload: dict) -> dict:
             confidence=confidence, issue_key=issue_key, proposed_value=proposed_value,
         )
 
-    result = task.parse_payload(row, payload)
+    return from_action_result(
+        task, row, task.parse_payload(row, payload),
+        confidence=confidence, rationale=rationale, proposed_value=proposed_value,
+    )
+
+
+def from_action_result(task, row: dict, result: ActionResult, *, confidence: float,
+                       rationale: str, proposed_value: Any = None) -> dict:
+    """Render a task's ActionResult as an action dict (no confidence gate)."""
+    issue_key = task.issue_key
 
     if result.kind == "update":
         return _action(
@@ -290,6 +309,20 @@ def from_task_result(task, row: dict, payload: dict) -> dict:
             confidence=confidence, issue_key=issue_key, proposed_value=result.inserts,
         )
         action["inserts"] = result.inserts
+        return action
+
+    if result.kind == "batch":
+        action = _action(
+            "batch",
+            target={"target_table": result.steps[0].target_table if result.steps else "",
+                    "target_pk": {}, "column": None, "old_value": None},
+            new_value=None, rationale=result.reason or rationale,
+            confidence=confidence, issue_key=issue_key, proposed_value=None,
+        )
+        action["steps"] = [
+            from_action_result(task, row, s, confidence=confidence, rationale=s.reason)
+            for s in result.steps
+        ]
         return action
 
     if result.kind == "alter_add_column":
@@ -555,6 +588,17 @@ def apply_repair(
     elif action["kind"] == "delete_all":
         if has_override:
             raise ValueError("override not supported for delete_all actions")
+    elif action["kind"] == "batch":
+        if has_override:
+            raise ValueError("override not supported for batch actions")
+        steps = action.get("steps") or []
+        if not steps or any(s["kind"] not in ("update", "delete", "delete_all") for s in steps):
+            raise ValueError("batch needs update / delete / delete_all steps")
+        # Validate every step before writing any, so a bad step leaves the log untouched.
+        planned = [apply_repair(sqlite_path, s, dry_run=True) for s in steps]
+        if dry_run:
+            return "\n--\n".join(planned)
+        return "\n--\n".join(apply_repair(sqlite_path, s, dry_run=False) for s in steps)
     elif action["kind"] not in ("update", "delete"):
         raise NotImplementedError(f"action kind {action['kind']!r} not supported.")
 

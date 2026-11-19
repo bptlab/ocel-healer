@@ -1,6 +1,7 @@
 from src.llm.actions import ActionResult
 from src.llm.schemas import DuplicateResolutionOutput
 from src.llm.tasks._base import ResolutionTask
+from src.llm.tasks.duplicate_objects_on_ids import drop_conflicting_type, duplicate_rows_context
 
 
 class DuplicateEventsOnIds(ResolutionTask):
@@ -9,7 +10,7 @@ class DuplicateEventsOnIds(ResolutionTask):
     Multiple rows in the `event` table share the same `ocel_id`. When all
     duplicates carry the same `ocel_type` the fix is deterministic (keep
     one, delete the rest); otherwise the LLM picks the surviving type and
-    the resolution is surfaced as an unrouted noop for manual review.
+    the rows of the other type are deleted.
     """
 
     issue_key = "duplicate_events_on_ids"
@@ -26,10 +27,11 @@ class DuplicateEventsOnIds(ResolutionTask):
     """
 
     INPUTS = """
-        - violation.ocel_ids     comma-separated list of duplicate ocel_ids
-                                 (typically the same id repeated)
-        - duplicate_rows         list of {ocel_id, ocel_type} for each
-                                 duplicate row
+        - violation.ocel_id      the shared id of the duplicate rows
+        - duplicate_rows         list of {ocel_id, ocel_type,
+                                 has_attribute_row} for each duplicate
+                                 row; has_attribute_row=true means the
+                                 type's attribute table holds this id
         - event                  the anchor record (one of the duplicates)
         - related_objects        the objects this event touches; their
                                  types and qualifiers indicate the right
@@ -49,6 +51,10 @@ class DuplicateEventsOnIds(ResolutionTask):
            id, entries are typically identical strings — that's expected;
            the downstream `DELETE FROM event WHERE ocel_id IN (...)` uses
            them as-is.
+        5. If the rows disagree on type, set `canonical_type` to the
+           surviving `ocel_type`, spelled exactly as in `duplicate_rows`.
+           A row with has_attribute_row=true is strong evidence for its
+           type.
     """
 
     EXAMPLES = """
@@ -57,21 +63,18 @@ class DuplicateEventsOnIds(ResolutionTask):
         related_objects = [{ocel_type: 'order', ocel_qualifier: 'order'}]
         → {"canonical_id": "e-1",
            "ids_to_delete": ["e-1"],
+           "canonical_type": "place order",
            "rationale": "kept the row with ocel_type='place order'; related order object qualifies this event as a place-order activity. Marked the NULL-type row for removal.",
            "confidence": 0.9}
     """
 
     def extend_context(self, conn, ctx: dict, row: dict) -> None:
-        dup_ids = row.get("ocel_ids", "")
+        # The detector emits one `ocel_id`; `ocel_ids` is accepted for joined lists.
+        dup_ids = row.get("ocel_ids") or row.get("ocel_id") or ""
         ids = [i.strip() for i in str(dup_ids).split(",") if i.strip()]
         if not ids:
             return
-        placeholders = ", ".join("?" * len(ids))
-        rows = conn.execute(
-            f"SELECT ocel_id, ocel_type FROM event WHERE ocel_id IN ({placeholders})",
-            ids,
-        ).fetchall()
-        ctx["duplicate_rows"] = [{"ocel_id": r[0], "ocel_type": r[1]} for r in rows]
+        ctx["duplicate_rows"] = duplicate_rows_context(conn, ids, "event")
         # Related objects for the anchor event, as a lightweight activity signal.
         anchor_id = ids[0]
         related = conn.execute(
@@ -105,7 +108,12 @@ class DuplicateEventsOnIds(ResolutionTask):
                 ),
             )
 
-        # Types differ → surface LLM suggestion as unrouted noop for manual review.
+        # Types differ → drop the rows of a type the LLM did not keep.
+        action = drop_conflicting_type(row, payload, unique_types, "event")
+        if action is not None:
+            return action
+
+        # No usable canonical type → surface LLM suggestion as unrouted noop for manual review.
         canonical = payload.get("canonical_id")
         rationale = (payload.get("rationale") or "").strip()
         if not canonical:

@@ -17,6 +17,7 @@ import sqlite3
 from src.order_management_corruption._common import (
     _capture_and_update,
     _clone_object_row,
+    _drop_column,
     _null_type_for,
     inject_missing_attribute_value,
 )
@@ -69,12 +70,12 @@ def inject_incorrect_object_type(
 
 
 # ---------------------------------------------------------------------------
-# missing_object_type (Easy/Medium/Hard)
+# missing_object_type (Easy/Hard)
 # ---------------------------------------------------------------------------
 
 
 def inject_missing_object_type_null_employee(conn: sqlite3.Connection) -> dict | None:
-    """missing_object_type Easy: NULL the ocel_type of a payment object."""
+    """missing_object_type Easy: NULL the ocel_type of an employee object."""
     obj_type = get_om_object_type("employees")
     row = conn.execute(
         "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (obj_type,)
@@ -86,22 +87,9 @@ def inject_missing_object_type_null_employee(conn: sqlite3.Connection) -> dict |
     return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
 
 
-def inject_missing_object_type_empty_string_order(conn: sqlite3.Connection) -> dict | None:
-    """missing_object_type Medium: Set ocel_type to '' on a purchase order."""
-    obj_type = get_om_object_type("orders")
-    row = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (obj_type,)
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    old_value = _capture_and_update(conn, "object", "ocel_type", ocel_id, "")
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
-
-
 def inject_missing_object_type_whitespace_product(conn: sqlite3.Connection) -> dict | None:
     """missing_object_type Hard: Set ocel_type to a whitespace-only string
-    on a material."""
+    on a product."""
     obj_type = get_om_object_type("products")
     row = conn.execute(
         "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (obj_type,)
@@ -114,12 +102,12 @@ def inject_missing_object_type_whitespace_product(conn: sqlite3.Connection) -> d
 
 
 # ---------------------------------------------------------------------------
-# missing_attribute_value (Easy/Medium/Hard)
+# missing_attribute_value (Easy/Hard)
 # ---------------------------------------------------------------------------
 
 
 def inject_missing_attribute_value_null_product_weight(conn: sqlite3.Connection) -> dict:
-    """missing_attribute_value Easy: NULL the weight of a material."""
+    """missing_attribute_value Easy: NULL the weight of a product."""
     table = get_om_object_table("object_products")
     row = conn.execute(
         f"SELECT ocel_id FROM {table} WHERE weight IS NOT NULL LIMIT 1"
@@ -128,19 +116,6 @@ def inject_missing_attribute_value_null_product_weight(conn: sqlite3.Connection)
         return {"affected_ids": [], "original_values": {}}
     ocel_id = row[0]
     old_value = _capture_and_update(conn, table, "weight", ocel_id, None)
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
-
-
-def inject_missing_attribute_value_empty_string_role(conn: sqlite3.Connection) -> dict:
-    """missing_attribute_value Medium: Set employee role to empty string."""
-    table = get_om_object_table("object_employees")
-    row = conn.execute(
-        f"SELECT ocel_id FROM {table} WHERE role IS NOT NULL LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return {"affected_ids": [], "original_values": {}}
-    ocel_id = row[0]
-    old_value = _capture_and_update(conn, table, "role", ocel_id, "")
     return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
 
 
@@ -158,12 +133,12 @@ def inject_missing_attribute_value_null_order_price(conn: sqlite3.Connection) ->
 
 
 # ---------------------------------------------------------------------------
-# incorrect_object_type (LLM-detected, Easy/Medium/Hard)
+# incorrect_object_type (LLM-detected, Easy/Hard)
 # ---------------------------------------------------------------------------
 
 
 def inject_incorrect_object_type_swap_order_to_employee(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_object_type Easy: Retype purchase_order as payment."""
+    """incorrect_object_type Easy: Retype an order as an employee."""
     orders_type = get_om_object_type("orders")
     employee_type = get_om_object_type("employees")
     row = conn.execute(
@@ -175,7 +150,11 @@ def inject_incorrect_object_type_swap_order_to_employee(conn: sqlite3.Connection
 
 
 def inject_incorrect_object_type_swap_item_to_product(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_object_type Medium: Retype item as a different object type."""
+    """incorrect_object_type Hard: Retype an item as a product.
+
+    Hard because items and products are closely related (every item `is a`
+    product), so the wrong type is plausible; only the `i-` id shape and
+    the item-style relations give it away."""
     items_type = get_om_object_type("items")
     products_type = get_om_object_type("products")
     row = conn.execute(
@@ -183,24 +162,11 @@ def inject_incorrect_object_type_swap_item_to_product(conn: sqlite3.Connection) 
     ).fetchone()
     if row is None:
         return None
-    # Use quotation as a clearly different type
-    return inject_incorrect_object_type(conn, row[0], "quotation")
-
-
-def inject_incorrect_object_type_case_variant_customers(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_object_type Hard: Retype purchase_requisition with case variant."""
-    customers_type = get_om_object_type("customers")
-    row = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (customers_type,)
-    ).fetchone()
-    if row is None:
-        return None
-    # Create case variant - uppercase
-    return inject_incorrect_object_type(conn, row[0], "PURCHASE_REQUISITION")
+    return inject_incorrect_object_type(conn, row[0], products_type)
 
 
 # ---------------------------------------------------------------------------
-# incorrect_attribute_datatype (Easy/Medium/Hard)
+# incorrect_attribute_datatype (Easy/Hard)
 #
 # SQLite type affinity coerces most naive datatype mismatches (e.g. '42' in
 # an INTEGER column becomes int 42). The reliable recipes are:
@@ -223,19 +189,6 @@ def inject_incorrect_attribute_datatype_string_in_weight(conn: sqlite3.Connectio
     return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
 
 
-def inject_incorrect_attribute_datatype_string_in_order_price(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_attribute_datatype Medium: Put 'TBD' into order price (REAL expecting numeric)."""
-    table = get_om_object_table("object_Orders")
-    row = conn.execute(
-        f"SELECT ocel_id FROM {table} WHERE price IS NOT NULL LIMIT 1"
-    ).fetchone()
-    if row is None:
-        return None
-    ocel_id = row[0]
-    old_value = _capture_and_update(conn, table, "price", ocel_id, "TBD")
-    return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
-
-
 def inject_incorrect_attribute_datatype_blob_in_role(conn: sqlite3.Connection) -> dict | None:
     """incorrect_attribute_datatype Hard: Put UTF-16-LE bytes into
     employee role field (TEXT).
@@ -254,12 +207,12 @@ def inject_incorrect_attribute_datatype_blob_in_role(conn: sqlite3.Connection) -
 
 
 # ---------------------------------------------------------------------------
-# duplicate_objects_on_ids (Easy/Medium/Hard)
+# duplicate_objects_on_ids (Easy/Hard)
 # ---------------------------------------------------------------------------
 
 
 def inject_duplicate_objects_on_ids_product(conn: sqlite3.Connection) -> str | None:
-    """duplicate_objects_on_ids Easy: Duplicate a material row in object."""
+    """duplicate_objects_on_ids Easy: Duplicate a product row in object."""
     products_type = get_om_object_type("products")
     row = conn.execute(
         "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (products_type,)
@@ -269,40 +222,30 @@ def inject_duplicate_objects_on_ids_product(conn: sqlite3.Connection) -> str | N
     return inject_duplicate_objects_on_ids(conn, ocel_id=row[0])
 
 
-def inject_duplicate_objects_on_ids_conflicting_types(conn: sqlite3.Connection) -> str | None:
-    """duplicate_objects_on_ids Medium: Insert purchase_order with conflicting material type."""
-    orders_type = get_om_object_type("orders")
-    items_type = get_om_object_type("items")
-    row = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (orders_type,)
-    ).fetchone()
-    if row is None:
-        return None
-    conn.execute("INSERT INTO object VALUES (?, ?)", (row[0], items_type))
-    return row[0]
-
-
-def inject_duplicate_objects_on_ids_triple_null_type(conn: sqlite3.Connection) -> str | None:
-    """duplicate_objects_on_ids Hard: Add two extra rows for one purchase requisition, one with NULL type."""
+def inject_duplicate_objects_on_ids_triple_conflicting_type(conn: sqlite3.Connection) -> str | None:
+    """duplicate_objects_on_ids Hard: Add two extra rows for one customer,
+    one of them under a conflicting type (`orders`), so a resolver can't
+    just drop identical copies."""
     customers_type = get_om_object_type("customers")
+    orders_type = get_om_object_type("orders")
     row = conn.execute(
         "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (customers_type,)
     ).fetchone()
     if row is None:
         return None
     ocel_id = row[0]
-    conn.execute("INSERT INTO object VALUES (?, ?)", (ocel_id, None))
+    conn.execute("INSERT INTO object VALUES (?, ?)", (ocel_id, orders_type))
     conn.execute("INSERT INTO object VALUES (?, ?)", (ocel_id, customers_type))
     return ocel_id
 
 
 # ---------------------------------------------------------------------------
-# duplicate_objects_on_attributes (Easy/Medium/Hard)
+# duplicate_objects_on_attributes (Easy/Hard)
 # ---------------------------------------------------------------------------
 
 
 def inject_duplicate_objects_on_attributes_clone_product(conn: sqlite3.Connection) -> str | None:
-    """duplicate_objects_on_attributes Easy: Clone a material's initial-state
+    """duplicate_objects_on_attributes Easy: Clone a product's initial-state
     row under a fabricated id."""
     products_type = get_om_object_type("products")
     table = get_om_object_table("object_products")
@@ -320,42 +263,20 @@ def inject_duplicate_objects_on_attributes_clone_product(conn: sqlite3.Connectio
     )
 
 
-def inject_duplicate_objects_on_attributes_clone_employee(conn: sqlite3.Connection) -> str | None:
-    """duplicate_objects_on_attributes Medium: Insert two employee objects with
-    same attributes - simulating duplicate master data records.
-    Example: 'Ada Nowak' and 'Ada Nowak (dup)' with identical consulting role."""
-    employee_type = get_om_object_type("employees")
-    table = get_om_object_table("object_employees")
-
-    original = "employee:original"
-    clone = "employee:clone"
-    fingerprint_time = "2023-04-03 01:00:00"
-    role_value = "manager"
-
-    conn.execute("INSERT INTO object VALUES (?, ?)", (original, employee_type))
-    conn.execute("INSERT INTO object VALUES (?, ?)", (clone, employee_type))
-    conn.execute(
-        f'INSERT INTO {table} (ocel_id, ocel_time, ocel_changed_field, role) '
-        "VALUES (?, ?, NULL, ?)",
-        (original, fingerprint_time, role_value),
-    )
-    conn.execute(
-        f'INSERT INTO {table} (ocel_id, ocel_time, ocel_changed_field, role) '
-        "VALUES (?, ?, NULL, ?)",
-        (clone, fingerprint_time, role_value),
-    )
-    return clone
-
-
 def inject_duplicate_objects_on_attributes_clone_order_and_referenced(conn: sqlite3.Connection) -> list[str]:
-    """duplicate_objects_on_attributes Hard: Clone a purchase order AND copy its
+    """duplicate_objects_on_attributes Hard: Clone an order AND copy its
     event_object rows."""
     orders_type = get_om_object_type("orders")
     table = get_om_object_table("object_orders")
-    qualifier = get_om_object_type("orders")
 
+    # An order whose price no other order shares, so the clone forms a new
+    # duplicate group instead of growing an existing one; OFFSET 1 skips the
+    # order missing_attribute_value nulls in the same tier.
     row = conn.execute(
-        f"SELECT ocel_id FROM {table} LIMIT 1"
+        f"SELECT ocel_id FROM {table} WHERE price IN ("
+        f"  SELECT price FROM {table} WHERE price IS NOT NULL "
+        f"  GROUP BY price HAVING COUNT(*) = 1"
+        f") ORDER BY ocel_id LIMIT 1 OFFSET 1"
     ).fetchone()
     if row is None:
         return []
@@ -381,48 +302,58 @@ def inject_duplicate_objects_on_attributes_clone_order_and_referenced(conn: sqli
 
 
 # ---------------------------------------------------------------------------
-# incorrect_object_attribute_value (LLM detection, Easy/Hard)
+# incorrect_attribute_value (LLM detection, Easy/Hard)
 # ---------------------------------------------------------------------------
 
 
 def inject_incorrect_object_attribute_value_negative_weight_easy(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_object_attribute_value Easy: Set material quantity to -999 (obviously wrong)."""
+    """incorrect_attribute_value Easy: Set a product's weight to -999 (obviously wrong)."""
     table = get_om_object_table("object_products")
     row = conn.execute(
-        f"SELECT ocel_id FROM {table} WHERE QuantityEKPOMENGE > 0 LIMIT 1"
+        f"SELECT ocel_id FROM {table} WHERE weight > 0 AND ocel_changed_field IS NULL LIMIT 1"
     ).fetchone()
     if row is None:
         return None
     ocel_id = row[0]
-    old_value = _capture_and_update(conn, table, "QuantityEKPOMENGE", ocel_id, -999)
+    old_value = _capture_and_update(conn, table, "weight", ocel_id, -999.0)
     return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
 
 
-def inject_incorrect_object_attribute_value_implausible_weight_hard(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_object_attribute_value Hard: Set product price to 999999 (plausible format but wrong)."""
+def inject_incorrect_object_attribute_value_implausible_price_hard(conn: sqlite3.Connection) -> dict | None:
+    """incorrect_attribute_value Hard: Multiply a product's price by 1000
+    (right sign and format, implausible magnitude)."""
     table = get_om_object_table("object_products")
     row = conn.execute(
-        f"SELECT ocel_id FROM {table} WHERE price > 0 AND price < 1000 LIMIT 1"
+        f"SELECT ocel_id, price FROM {table} "
+        "WHERE price > 0 AND ocel_changed_field IS NULL LIMIT 1 OFFSET 1"
     ).fetchone()
     if row is None:
         return None
-    ocel_id = row[0]
-    old_value = _capture_and_update(conn, table, "price", ocel_id, 999999)
+    ocel_id, price = row
+    old_value = _capture_and_update(conn, table, "price", ocel_id, round(price * 1000, 2))
     return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
 
 
 # ---------------------------------------------------------------------------
 # missing_object_attribute (LLM detection, Easy/Hard)
-# Note: These require schema changes (DROP COLUMN) which are complex in SQLite.
-# Marking as not implemented for now - would need ALTER TABLE workarounds.
+#
+# Schema-level: a whole attribute column is dropped from a type table.
 # ---------------------------------------------------------------------------
 
 
-def inject_missing_object_attribute_drop_price_easy(conn: sqlite3.Connection) -> str | None:
-    """missing_object_attribute Easy: Drop price column from Products (schema change - not implemented)."""
-    return None
+def inject_missing_object_attribute_drop_price_easy(conn: sqlite3.Connection) -> dict:
+    """missing_object_attribute Easy: Drop `price` from Orders. Easy because
+    an order without a price is an obvious gap and Items/Products still
+    carry `price`."""
+    table = get_om_object_table("object_orders")
+    return {"table": table, "column": "price",
+            "original_values": _drop_column(conn, table, "price")}
 
 
-def inject_missing_object_attribute_drop_optional_hard(conn: sqlite3.Connection) -> str | None:
-    """missing_object_attribute Hard: Drop optional column (schema change - not implemented)."""
-    return None
+def inject_missing_object_attribute_drop_weight_hard(conn: sqlite3.Connection) -> dict:
+    """missing_object_attribute Hard: Drop `weight` from Packages, leaving
+    the table with no attributes at all. Hard because whether a package
+    should record its weight is domain knowledge, not visible from peers."""
+    table = get_om_object_table("object_packages")
+    return {"table": table, "column": "weight",
+            "original_values": _drop_column(conn, table, "weight")}

@@ -1,6 +1,7 @@
 from src.llm.actions import ActionResult, event_attribute_target
 from src.llm.schemas import CoercedValueOutput
 from src.llm.tasks._base import ResolutionTask
+from src.llm.tasks.incorrect_attribute_datatype import placeholder_to_null
 
 
 class IncorrectEventAttributeDatatype(ResolutionTask):
@@ -65,6 +66,9 @@ class IncorrectEventAttributeDatatype(ResolutionTask):
 
     def anchor(self, row: dict) -> tuple[str | None, str | None]:
         return (row.get("ocel_id"), row.get("event_type"))
+
+    def rule_action(self, conn, row: dict) -> ActionResult | None:
+        return placeholder_to_null(row, event_attribute_target(row))
 
     def parse_payload(self, row: dict, payload: dict) -> ActionResult:
         new = payload.get("coerced_value")

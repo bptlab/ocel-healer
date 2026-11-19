@@ -26,6 +26,10 @@ from src.llm.actions import ActionResult
 from src.llm.schemas import SuggestedAttributesOutput
 from src.llm.tasks._base import DetectionResult, DetectionTask
 
+# A suggestion is only a flag when the model is fairly sure: proposing
+# *something* for every type is easy, so a low-confidence idea is noise.
+MIN_SUGGESTION_CONFIDENCE = 0.7
+
 
 class MissingObjectAttribute(DetectionTask):
     issue_key = "missing_object_attribute"
@@ -122,9 +126,14 @@ class MissingObjectAttribute(DetectionTask):
            (`ocel_id`, `ocel_type`, anything with an `ocel_` prefix).
         5. Do NOT propose columns that are just renames of existing ones
            (e.g. `customer_id` when `customer_ref` is already declared).
-        6. Prefer AT MOST 5 suggestions. Fewer is better than noise. Return
-           an empty list when nothing plausibly belongs.
-        7. For each suggestion set `affinity` to a SQLite storage class
+        6. Suggest only what this log gives evidence for: a closely related
+           peer type declares it, or the type's `represents` note makes it
+           indispensable. Generic bookkeeping fields (`status`,
+           `created_at`, contact details) are not evidence. Most types are
+           complete — return an empty list unless you are confident (≥ 0.7);
+           weaker suggestions are discarded.
+        7. Prefer AT MOST 5 suggestions. Fewer is better than noise.
+        8. For each suggestion set `affinity` to a SQLite storage class
            (`TEXT`, `INTEGER`, `REAL`, or `BLOB`). Default to `TEXT` when
            unsure — the fix path treats unknown affinities as TEXT anyway.
     """
@@ -175,6 +184,8 @@ class MissingObjectAttribute(DetectionTask):
             if not name or name.lower() in declared_lc:
                 continue
             if name.lower().startswith("ocel_"):
+                continue
+            if float(item.get("confidence") or 0.0) < MIN_SUGGESTION_CONFIDENCE:
                 continue
             clean.append({
                 "name": name,

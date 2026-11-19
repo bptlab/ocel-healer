@@ -17,7 +17,8 @@ class MissingEventTimestamp(ResolutionTask):
         One event row has no `ocel_time`. Interpolate a plausible timestamp
         from the timestamps of the other events touching the same object(s)
         — the "neighbor events". Match the format of the neighbors' timestamps
-        exactly. If the neighbors give no bracketing signal, return null.
+        exactly. A bound on one side is enough; return null only when no
+        neighbor has a timestamp.
     """
 
     INPUTS = """
@@ -49,9 +50,12 @@ class MissingEventTimestamp(ResolutionTask):
            objects), all their neighbor bounds must be respected.
         4. Match `expected_format` verbatim — same separator, same
            precision. Do not switch to ISO with `T` or add a timezone.
-        5. Return `inferred_timestamp: null` when either no neighbors have
-           timestamps OR neighbors do not bracket the anchor at all AND
-           the anchor's activity does not independently hint at a value.
+        5. If neighbors bound the anchor on one side only (e.g. the first
+           event of a lifecycle has only later neighbors), pick a time
+           shortly before the earliest later neighbor of the same
+           order/item (or shortly after the latest earlier one).
+        6. Return `inferred_timestamp: null` only when no neighbor has a
+           timestamp.
     """
 
     EXAMPLES = """
@@ -68,10 +72,19 @@ class MissingEventTimestamp(ResolutionTask):
            "rationale": "pay order sits after confirm order (12:05) and before pick item (14:00); picked midpoint",
            "confidence": 0.9}
 
-        violation = {ocel_id: 'item out of stock:990300', event_type: 'item out of stock'}
+        violation = {ocel_id: 'place order:990020', event_type: 'place order'}
+        neighbor_events = [
+          {ocel_type: 'confirm order', ocel_time: '2023-05-02 09:40:00'},
+          {ocel_type: 'pick item',     ocel_time: '2023-05-02 11:15:00'},
+        ]
+        → {"inferred_timestamp": "2023-05-02 09:10:00",
+           "rationale": "place order precedes confirm order (09:40); only an upper bound, picked shortly before it",
+           "confidence": 0.6}
+
+        violation = {ocel_id: 'send package:990300', event_type: 'send package'}
         neighbor_events = []
         → {"inferred_timestamp": null,
-           "rationale": "no neighbor events available; cannot bracket",
+           "rationale": "neighbor_events is empty; nothing to anchor a timestamp on",
            "confidence": 0.2}
     """
 

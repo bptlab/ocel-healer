@@ -22,10 +22,9 @@ Injectors are grouped by OCEL dimension:
 point used by the dashboard, notebooks and tests. It copies the source SQLite
 file to the destination and runs the selected `level`:
 
-    easy   — one gentle flavor per detectable issue.
-    medium — one moderate flavor per detectable issue.
-    hard   — one adversarial flavor per detectable issue.
-    all    — every injector (36 corruptions across 12 issue types).
+    easy   — one gentle flavor per rule-detectable issue.
+    hard   — one adversarial flavor per rule-detectable issue.
+    all    — easy + hard together.
 
     from src.order_management_corruption import corrupt_database, DEFAULT_CLEAN_PATH, DEFAULT_FULL_PATH
     from src.detection.error_detection import detect_all

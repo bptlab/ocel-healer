@@ -14,6 +14,7 @@ from src.llm.cancel import Cancelled, current_token
 MODEL = os.getenv("OCEL_LLM_MODEL", "qwen3:8b")
 LLM_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
 MIN_CONFIDENCE = float(os.getenv("OCEL_LLM_MIN_CONFIDENCE", "0.4"))
+TIMEOUT = float(os.getenv("OCEL_LLM_TIMEOUT", "60"))
 
 
 class LLMOutputInvalid(Exception):
@@ -30,12 +31,19 @@ class LLMOutputInvalid(Exception):
 
 
 _active_model: str = MODEL
+_timeout: float = TIMEOUT
 
 
 def set_active_model(name: str) -> None:
     """Override the model used for all subsequent LLM calls (dashboard use)."""
     global _active_model
     _active_model = name
+
+
+def set_timeout(seconds: float) -> None:
+    """Override the default request timeout for subsequent LLM calls."""
+    global _timeout
+    _timeout = seconds
 
 
 def llm_ready() -> tuple[bool, list[str]]:
@@ -51,11 +59,11 @@ def _post_chat(
     messages: list[dict[str, str]],
     *,
     model: str | None = None,
-    timeout: float = 60.0,
+    timeout: float | None = None,
 ) -> str:
     """Send one chat-completions request; return the raw assistant text.
 
-    Defaults preserve the repair-agent behaviour (active model, 60s timeout).
+    Defaults preserve the repair-agent behaviour (active model, `set_timeout`).
     The examination agent passes its own model/timeout."""
     body = json.dumps({
         "model": model or _active_model,
@@ -64,7 +72,9 @@ def _post_chat(
         "temperature": 0.5,
         "stream": False,
     }).encode("utf-8")
-    payload = json.loads(_post_json("/v1/chat/completions", body, timeout).decode("utf-8"))
+    payload = json.loads(
+        _post_json("/v1/chat/completions", body, timeout or _timeout).decode("utf-8")
+    )
     return payload["choices"][0]["message"]["content"].strip()
 
 

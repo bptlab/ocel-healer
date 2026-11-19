@@ -28,6 +28,7 @@ from src.detection.error_detection import (
 from src.llm.actions import ActionResult
 from src.llm.schemas import SuggestedAttributesOutput
 from src.llm.tasks._base import DetectionResult, DetectionTask
+from src.llm.tasks.missing_object_attribute import MIN_SUGGESTION_CONFIDENCE
 
 
 class MissingEventAttribute(DetectionTask):
@@ -110,8 +111,11 @@ class MissingEventAttribute(DetectionTask):
         4. Do NOT propose reserved / structural columns
            (`ocel_id`, `ocel_type`, `ocel_time`, anything with an `ocel_`
            prefix — `ocel_time` is the canonical timestamp).
-        5. Prefer AT MOST 5 suggestions. Return an empty list when
-           nothing plausibly belongs.
+        5. Suggest only what this log gives evidence for: peer event types
+           declare it, or the activity cannot happen without it. Generic
+           bookkeeping fields are not evidence. Most types are complete —
+           return an empty list unless you are confident (≥ 0.7); weaker
+           suggestions are discarded. At most 5 suggestions.
         6. For each suggestion set `affinity` to a SQLite storage class
            (`TEXT`, `INTEGER`, `REAL`, or `BLOB`). Default to `TEXT`.
     """
@@ -157,6 +161,8 @@ class MissingEventAttribute(DetectionTask):
             if not name or name.lower() in declared_lc:
                 continue
             if name.lower().startswith("ocel_"):
+                continue
+            if float(item.get("confidence") or 0.0) < MIN_SUGGESTION_CONFIDENCE:
                 continue
             clean.append({
                 "name": name,

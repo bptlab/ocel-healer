@@ -172,7 +172,7 @@ results = detect_all("data/synthetic/order-management-corrupted.sqlite")
 ```python
 from src.order_management_corruption import corrupt_database, DEFAULT_CLEAN_PATH
 
-corrupt_database(DEFAULT_CLEAN_PATH, level="all")   # levels: legacy, easy, medium, hard, all
+corrupt_database(DEFAULT_CLEAN_PATH, level="all")   # levels: easy, hard, all
 ```
 
 With `level="all"` this regenerates `data/synthetic/order-management-corrupted.sqlite`.
@@ -194,6 +194,19 @@ The artifacts are written **next to the log**, in `<log folder>/examination/<log
 - `examination_guide.json`: LLM interpretations (optional layer)
 
 The dashboard, the CLI and the LLM detection and repair steps all use this location, so a report created by any of them is picked up by the others. Repair also works without a report, just without log-specific hints. If the log's structure changes (tables, types, qualifiers), the report is marked stale and should be regenerated.
+
+### Synthetic evaluation (inject → detect → resolve)
+
+```bash
+python -m src.evaluation.evaluate_synthetic --model qwen3:8b            # 50 scenarios × 10 runs
+python -m src.evaluation.evaluate_synthetic --model qwen3:8b --runs 1 --only missing_event,o2o_self_loop
+```
+
+Tests every issue type of the dashboard overview on its own. Each scenario (one per issue type and difficulty, easy/hard; see `src/evaluation/scenarios.py`) copies a clean log, injects exactly that one issue, detects it, and resolves it the way the dashboard does. Rule cells count as detected when the detector reports rows on top of the clean log. LLM cells show the LLM the injected candidate mixed with 20 clean candidates of the same type, so false alarms are measured too. A repair is scored **lenient** (the issue is no longer detected and no detector reports more rows than before) and **strict** (the repaired log equals the clean log, numbers within 10 %, timestamps within 1 h). Injections are deterministic, so the 10 runs repeat the same corruption and vary only in the LLM's answers.
+
+The evaluation runs on `data/synthetic/order-management-eval.sqlite`: the order-management log plus two event attributes derived from data already in it (`resource`, the employee linked to the event; `amount` on pay order, the order's price), because the baseline has none and the event-attribute issues need them. It is built automatically on the first run (`python -m src.evaluation.build_eval_log` rebuilds it).
+
+Each run is archived in `data/evaluation/synthetic/<timestamp>-<model>/`: `runs.csv` (one row per run), `report.md` and `table.tex`.
 
 ### Evaluating the examination hints
 

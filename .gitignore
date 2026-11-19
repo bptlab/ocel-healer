@@ -14,6 +14,10 @@ data/**/examination/
 # - per-run outputs of src.evaluation.evaluate_hints / summarize_runs
 data/evaluation/runs/
 data/evaluation/summary.md
+# - per-run outputs of src.evaluation.evaluate_synthetic, and its log
+#   (rebuilt from the baseline by src.evaluation.build_eval_log)
+data/evaluation/synthetic/
+data/synthetic/order-management-eval.sqlite
 
 # OS / editor cruft
 .DS_Store

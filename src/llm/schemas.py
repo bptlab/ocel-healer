@@ -103,6 +103,8 @@ class DuplicateResolutionOutput(TaskOutput):
 
     canonical_id: str
     ids_to_delete: list[str] = Field(default_factory=list)
+    # The surviving `ocel_type` when the duplicates disagree on type.
+    canonical_type: str | None = None
 
 
 class InferredTimestampOutput(TaskOutput):

@@ -1,4 +1,4 @@
-from src.detection.error_detection import _event_type_tables
+from src.detection.error_detection import _OCEL_RESERVED, _column_info, _event_type_tables
 from src.llm.actions import ActionResult
 from src.llm.schemas import InferredObjectOutput
 from src.llm.tasks._base import ResolutionTask
@@ -26,15 +26,13 @@ class MissingEvent(ResolutionTask):
           - `ocel_type`: the event type the missing event belongs to (must
             be one of `candidate_types`), or null if the evidence is too
             weak.
-          - `attributes`: use this to carry the inferred `ocel_time` for
-            the missing event (key: "ocel_time"). Match the timestamp
-            format of the linked object's other events. Leave empty
-            (`{}`) if you can't bracket a timestamp — the resolver will
-            insert NULL and it will be picked up by the missing_event_
-            timestamp detector on the next round.
-        The resolver will INSERT one row into `event` and one initial-state
-        row into `event_<Type>` (with ocel_time from `attributes.ocel_time`)
-        from your answer.
+          - `attributes`: the inferred `ocel_time` (key: "ocel_time") plus
+            a value for every column `type_attributes` lists for the chosen
+            type. Match the timestamp format of the linked object's other
+            events. Leave a key out if you can't infer it — the resolver
+            inserts NULL and the missing-value detectors pick it up.
+        The resolver will INSERT one row into `event` and one row into
+        `event_<Type>` from your answer.
     """
 
     INPUTS = """
@@ -53,6 +51,11 @@ class MissingEvent(ResolutionTask):
                                       the lifecycle window the missing
                                       event should slot into
         - candidate_types             the closed list of valid event types
+        - event_links                 every surviving event_object row of
+                                      the missing event: the objects it
+                                      touched, their types and qualifiers
+        - type_attributes             per candidate type: its attribute
+                                      columns and up to 3 example rows
     """
 
     METHOD = """
@@ -71,7 +74,12 @@ class MissingEvent(ResolutionTask):
            the timestamps of the object's other events (same object
            lifecycle order as `missing_event_timestamp`). Match the
            format verbatim.
-        5. Return `ocel_type: null` when the evidence is genuinely opaque
+        5. Fill the chosen type's other columns from `event_links` and the
+           examples in `type_attributes`: a column that holds employee
+           names (e.g. `resource`) usually names the employee linked in
+           `event_links`; a column that is constant across the examples
+           (e.g. `resource = 'system'`) takes that constant.
+        6. Return `ocel_type: null` when the evidence is genuinely opaque
            (no id keyword, no qualifier hint, no lifecycle gap).
     """
 
@@ -96,8 +104,12 @@ class MissingEvent(ResolutionTask):
           {ocel_type: 'send package', ocel_time: '2023-04-04 09:00:00'}
         ]
         candidate_types = ['create package', 'send package', ...]
+        event_links = [{ocel_object_id: 'Detlef Wetzeler',
+                        ocel_type: 'employees', qualifier: 'packer'}, ...]
+        type_attributes = {'create package': {columns: ['resource'], ...}}
         → {"ocel_type": "create package",
-           "attributes": {"ocel_time": "2023-04-04 08:00:00"},
+           "attributes": {"ocel_time": "2023-04-04 08:00:00",
+                          "resource": "Detlef Wetzeler"},
            "rationale": "qualifier 'packer' on a package + already has send package → the missing event is likely 'create package', which precedes send",
            "confidence": 0.75}
     """
@@ -107,6 +119,7 @@ class MissingEvent(ResolutionTask):
     # `row` dict; the leading underscore signals internal-use-only so the
     # LLM prompt renderer ignores it.
     _TYPE_MAP_KEY = "_event_type_map"
+    _COLUMNS_KEY = "_event_type_columns"
 
     def anchor(self, row: dict) -> tuple[str | None, str | None]:
         # No object-side anchor; we build custom context below.
@@ -118,6 +131,33 @@ class MissingEvent(ResolutionTask):
         ctx["candidate_types"] = list(type_map.keys())
         # Stash the map so parse_payload can look up the target sub-table.
         row[self._TYPE_MAP_KEY] = type_map
+
+        # What a complete row of each type looks like.
+        columns = {t: [c for c, _ in _column_info(conn, table)] for t, table in type_map.items()}
+        row[self._COLUMNS_KEY] = columns
+        ctx["type_attributes"] = {}
+        for t, table in type_map.items():
+            cols = ["ocel_time", *columns[t]]
+            examples = conn.execute(
+                f'SELECT {", ".join(f"{chr(34)}{c}{chr(34)}" for c in cols)} '
+                f'FROM "{table}" LIMIT 3'
+            ).fetchall()
+            ctx["type_attributes"][t] = {
+                "columns": columns[t],
+                "examples": [dict(zip(cols, e)) for e in examples],
+            }
+
+        # Everything the missing event touched, not just the reported row.
+        links = conn.execute(
+            "SELECT eo.ocel_object_id, o.ocel_type, eo.ocel_qualifier "
+            "FROM event_object eo LEFT JOIN object o ON o.ocel_id = eo.ocel_object_id "
+            "WHERE eo.ocel_event_id = ? LIMIT 40",
+            (row.get("ocel_event_id"),),
+        ).fetchall()
+        ctx["event_links"] = [
+            {"ocel_object_id": oid, "ocel_type": otype, "qualifier": q}
+            for oid, otype, q in links
+        ]
 
         # The referring object (via the E2O row).
         object_id = row.get("ocel_object_id")
@@ -181,17 +221,20 @@ class MissingEvent(ResolutionTask):
             )
 
         attrs = payload.get("attributes") or {}
-        # Only `ocel_time` from attributes is meaningful today (event
-        # sub-tables in this dataset carry no other columns), but we keep
-        # the shape general in case the schema gains attributes later.
-        ocel_time = attrs.get("ocel_time")
+        # Only the chosen type's columns: a stray name would make the insert fail.
+        known = (row.get(self._COLUMNS_KEY) or {}).get(ocel_type)
+        extra = {
+            k: v for k, v in attrs.items()
+            if k not in _OCEL_RESERVED and (known is None or k in known)
+        }
 
         event_id = row.get("ocel_event_id")
         inserts = [
             {"table": "event", "columns": {"ocel_id": event_id, "ocel_type": ocel_type}},
             {"table": target_table, "columns": {
                 "ocel_id": event_id,
-                "ocel_time": ocel_time,
+                "ocel_time": attrs.get("ocel_time"),
+                **extra,
             }},
         ]
         return ActionResult.insert(inserts=inserts, reason=rationale)

@@ -1,0 +1,411 @@
+{
+  "version": 4,
+  "db_path": "data/synthetic/order-management-baseline.sqlite",
+  "model": "qwen2.5:7b",
+  "source_fingerprint": "d88525a4cf30ea8b",
+  "domain": {
+    "process": "An online retail and order fulfillment process",
+    "evidence": [
+      "Multiple 'pick item' events for each product",
+      "Customer placing 'place order' and paying through 'pay order'",
+      "Orders are fulfilled with 'send package' and 'package delivered'",
+      "'item out of stock' triggers reordering"
+    ],
+    "confidence": "high"
+  },
+  "object_types": {
+    "orders": {
+      "table": "object_Orders",
+      "represents": "Order events in an online retail process",
+      "id_note": "ocel_id contains unique identifiers for each order event, prefixed with 'o-' and followed by a seven-digit number.",
+      "attributes": {
+        "ocel_time": {
+          "meaning": "Timestamp of the order event",
+          "value_source": "events",
+          "domain_knowledge_applicable": true,
+          "null_expected_by_design": false,
+          "repair_hint": "Use the timestamp from the event log."
+        },
+        "ocel_changed_field": {
+          "meaning": "Field that was changed during the order event (always null in this dataset)",
+          "value_source": "unknown",
+          "domain_knowledge_applicable": false,
+          "null_expected_by_design": true,
+          "repair_hint": "This field is always null, indicating no delta encoding."
+        },
+        "price": {
+          "meaning": "Price of the order or item in the order",
+          "value_source": "object_id",
+          "domain_knowledge_applicable": false,
+          "null_expected_by_design": false,
+          "repair_hint": "Use the price value directly from the object."
+        }
+      }
+    },
+    "items": {
+      "table": "object_Items",
+      "represents": "Items in an online retail and order fulfillment process",
+      "id_note": "ocel_id values contain unique identifiers for each item, which can be used to track individual objects throughout the process.",
+      "attributes": {
+        "ocel_time": {
+          "meaning": "Timestamp of the event where the attribute value was recorded or changed",
+          "value_source": "events",
+          "domain_knowledge_applicable": false,
+          "null_expected_by_design": false,
+          "repair_hint": "Use the timestamp from the associated event."
+        },
+        "ocel_changed_field": {
+          "meaning": "Identifies which field (attribute) was changed in the event, but is null here as per evidence",
+          "value_source": "unknown",
+          "domain_knowledge_applicable": false,
+          "null_expected_by_design": true,
+          "repair_hint": "Not applicable; this column is used for delta encoding and not populated here."
+        },
+        "weight": {
+          "meaning": "Weight of the item in kilograms",
+          "value_source": "object_id",
+          "domain_knowledge_applicable": true,
+          "null_expected_by_design": false,
+          "repair_hint": "Measure or look up the weight based on the object ID."
+        },
+        "price": {
+          "meaning": "Price of the item in dollars",
+          "value_source": "object_id",
+          "domain_knowledge_applicable": true,
+          "null_expected_by_design": false,
+          "repair_hint": "Look up the price based on the object ID or known pricing data."
+        }
+      }
+    },
+    "packages": {
+      "table": "object_Packages",
+      "represents": "Packages in an online retail and order fulfillment process",
+      "id_note": "ocel_id values are unique identifiers for each package, prefixed with 'p-' and containing numeric IDs",
+      "attributes": {
+        "ocel_time": {
+          "meaning": "Timestamp of the event involving the package",
+          "value_source": "events",
+          "domain_knowledge_applicable": true,
+          "null_expected_by_design": false,
+          "repair_hint": "Use the timestamp from the corresponding event"
+        },
+        "ocel_changed_field": {
+          "meaning": "Field that changed in the package record (always null here, indicating delta encoding)",
+          "value_source": "unknown",
+          "domain_knowledge_applicable": false,
+          "null_expected_by_design": true,
+          "repair_hint": "Not applicable; always null as per evidence"
+        },
+        "weight": {
+          "meaning": "Weight of the package in kilograms",
+          "value_source": "unknown",
+          "domain_knowledge_applicable": false,
+          "null_expected_by_design": false,
+          "repair_hint": "Measure or look up the weight based on contents"
+        }
+      }
+    },
+    "customers": {
+      "table": "object_Customers",
+      "represents": "Timestamps and changed fields for customer objects in an event log",
+      "id_note": "ocel_id contains unique identifiers for each customer object, likely their entity names",
+      "attributes": {
+        "ocel_time": {
+          "meaning": "Timestamp when the event involving this customer occurred",
+          "value_source": "events",
+          "domain_knowledge_applicable": false,
+          "null_expected_by_design": false,
+          "repair_hint": "Use the timestamp from the corresponding event"
+        },
+        "ocel_changed_field": {
+          "meaning": "Field name that was changed in the customer object during the event, if any; otherwise NULL",
+          "value_source": "unknown",
+          "domain_knowledge_applicable": false,
+          "null_expected_by_design": true,
+          "repair_hint": "Indicates a change but no specific field is provided, so leave as NULL"
+        }
+      }
+    },
+    "products": {
+      "table": "object_Products",
+      "represents": "Product instances in an online retail and order fulfillment process",
+      "id_note": "ocel_id contains unique identifiers for each product instance, which can be used to track changes over time",
+      "attributes": {
+        "ocel_time": {
+          "meaning": "Timestamp of the event involving the product",
+          "value_source": "events",
+          "domain_knowledge_applicable": true,
+          "null_expected_by_design": false,
+          "repair_hint": "Use the closest timestamp from the events table"
+        },
+        "ocel_changed_field": {
+          "meaning": "Attribute of the product that was changed in this event",
+          "value_source": "derived_from_other_attributes",
+          "domain_knowledge_applicable": false,
+          "null_expected_by_design": true,
+          "repair_hint": "Indicates which attribute was updated, if any"
+        },
+        "weight": {
+          "meaning": "Weight of the product in kilograms",
+          "value_source": "unknown",
+          "domain_knowledge_applicable": false,
+          "null_expected_by_design": true,
+          "repair_hint": "Can be estimated based on known products or categories"
+        },
+        "price": {
+          "meaning": "Price of the product in dollars",
+          "value_source": "unknown",
+          "domain_knowledge_applicable": false,
+          "null_expected_by_design": true,
+          "repair_hint": "Can be estimated based on known products or categories"
+        }
+      }
+    },
+    "employees": {
+      "table": "object_Employees",
+      "represents": "The roles and timestamps associated with employees in an organizational process",
+      "id_note": "ocel_id contains unique identifiers for individual employees, which can be used to track their involvement over time",
+      "attributes": {
+        "ocel_time": {
+          "meaning": "Timestamp of the event involving the employee",
+          "value_source": "events",
+          "domain_knowledge_applicable": true,
+          "null_expected_by_design": false,
+          "repair_hint": "Use the earliest or latest timestamp if genuinely missing"
+        },
+        "ocel_changed_field": {
+          "meaning": "The attribute that changed during the event, but is not applicable as it's always null in this case",
+          "value_source": "unknown",
+          "domain_knowledge_applicable": false,
+          "null_expected_by_design": true,
+          "repair_hint": "Leave NULL as it indicates no change"
+        },
+        "role": {
+          "meaning": "The role of the employee within the organization at the time of the event",
+          "value_source": "domain_knowledge",
+          "domain_knowledge_applicable": true,
+          "null_expected_by_design": false,
+          "repair_hint": "Assign a default role if genuinely missing"
+        }
+      }
+    }
+  },
+  "event_types": {
+    "pay order": {
+      "table": "event_PayOrder",
+      "represents": "The payment of an order in an online retail process.",
+      "id_note": "ocel_id values are opaque tokens that uniquely identify each pay order event within the log.",
+      "lifecycle_note": "Occurs after 'confirm order' and before 'package delivered' in the typical process flow.",
+      "attributes": {
+        "ocel_time": {
+          "meaning": "The timestamp of when the payment was made.",
+          "value_source": "events",
+          "repair_hint": "Use the actual time recorded for each event."
+        },
+        "amount": {
+          "meaning": "The monetary value of the order being paid.",
+          "value_source": "domain_knowledge",
+          "repair_hint": "Fill with the amount reported in the 'amount' attribute of the corresponding pay order event."
+        }
+      }
+    },
+    "package delivered": {
+      "table": "event_PackageDelivered",
+      "represents": "The delivery of a package by the shipper to the customer.",
+      "id_note": "Ocel_id values are opaque tokens that uniquely identify each delivery event, useful for tracking individual deliveries.",
+      "lifecycle_note": "This event type occurs after 'send package' and before any failure events like 'failed delivery', indicating successful completion of the delivery process.",
+      "attributes": {
+        "ocel_time": {
+          "meaning": "The timestamp when the package was delivered.",
+          "value_source": "events",
+          "repair_hint": "Use the actual time recorded in the event log."
+        },
+        "resource": {
+          "meaning": "The shipper responsible for delivering the package.",
+          "value_source": "unknown",
+          "repair_hint": "Assign a known shipper based on context or domain knowledge."
+        }
+      }
+    },
+    "place order": {
+      "table": "event_PlaceOrder",
+      "represents": "The placement of an order for items by customers in the online retail process.",
+      "id_note": "OCEL IDs are opaque tokens that uniquely identify each 'place order' event, serving as a reference within the log.",
+      "lifecycle_note": "'place order' typically occurs at the beginning of the typical process flow before any item out of stock or confirm order events.",
+      "attributes": {
+        "ocel_time": {
+          "meaning": "The timestamp when the order was placed.",
+          "value_source": "events",
+          "repair_hint": "Use the exact time recorded in the event log."
+        },
+        "item_count": {
+          "meaning": "The number of items included in the order.",
+          "value_source": "domain_knowledge",
+          "repair_hint": "Estimate based on known average item counts or use a default value if no data is available."
+        }
+      }
+    },
+    "create package": {
+      "table": "event_CreatePackage",
+      "represents": "The creation of a package for an order, including the resource (employee) who created it.",
+      "id_note": "OCEL IDs are opaque tokens that uniquely identify each 'create package' event; they can be used to track individual events within the process.",
+      "lifecycle_note": "'create package' occurs after 'pick item' and before 'send package' in the typical order of events.",
+      "attributes": {
+        "ocel_time": {
+          "meaning": "The timestamp when the package was created.",
+          "value_source": "events",
+          "repair_hint": "Use the actual time recorded during the event."
+        },
+        "resource": {
+          "meaning": "The employee who created the package.",
+          "value_source": "object_id",
+          "repair_hint": "Identify and link to the correct employee object based on their name."
+        }
+      }
+    },
+    "confirm order": {
+      "table": "event_ConfirmOrder",
+      "represents": "The timestamp and sales person of the confirmation event.",
+      "id_note": "Ocel_id values are opaque tokens that uniquely identify each confirm order event.",
+      "lifecycle_note": "This event typically occurs after 'place order' and before 'pick item' in the process lifecycle.",
+      "attributes": {
+        "ocel_time": {
+          "meaning": "The timestamp of the confirmation event",
+          "value_source": "events",
+          "repair_hint": "Use the recorded timestamp from the event log."
+        },
+        "resource": {
+          "meaning": "The sales person who confirmed the order",
+          "value_source": "object_id",
+          "repair_hint": "Identify the corresponding sales person using the object_id."
+        }
+      }
+    },
+    "item out of stock": {
+      "table": "event_ItemOutOfStock",
+      "represents": "The timestamp and responsible employee for an item becoming out of stock.",
+      "id_note": "OCEL IDs are opaque tokens that uniquely identify each 'item out of stock' event, allowing tracking of specific instances within the process.",
+      "lifecycle_note": "'Item out of stock' events typically occur between placing an order and confirming it, suggesting they happen when inventory levels drop below expected levels during the ordering or fulfillment phase.",
+      "attributes": {
+        "ocel_time": {
+          "meaning": "The timestamp when the item became out of stock.",
+          "value_source": "events",
+          "repair_hint": "Use the actual time recorded in the event log."
+        },
+        "resource": {
+          "meaning": "The employee who noticed or reported that an item is out of stock.",
+          "value_source": "derived_from_other_attributes",
+          "repair_hint": "Assign the employee responsible for noticing the issue, typically a staff member involved in inventory management."
+        }
+      }
+    },
+    "pick item": {
+      "table": "event_PickItem",
+      "represents": "The time and person performing the pick item event in an online retail process.",
+      "id_note": "ocel_id values are unique identifiers for each pick item event, likely representing the specific instance or transaction of picking an item.",
+      "lifecycle_note": "This event type occurs after 'confirm order' and before 'reorder item' in the typical process flow, indicating it happens when items are being picked from stock to fulfill a confirmed order.",
+      "attributes": {
+        "ocel_time": {
+          "meaning": "The timestamp of the pick item event.",
+          "value_source": "events",
+          "repair_hint": "Use the exact time recorded in the log."
+        },
+        "resource": {
+          "meaning": "The employee who performed the pick item action.",
+          "value_source": "unknown",
+          "repair_hint": "Assign based on the employee attribute linked to this event."
+        }
+      }
+    },
+    "send package": {
+      "table": "event_SendPackage",
+      "represents": "The event type `send package` marks the point in time when a package is dispatched from the shipper.",
+      "id_note": "Ocel_id values are opaque tokens that uniquely identify each send package event, which can be used to track individual packages throughout their process lifecycle.",
+      "lifecycle_note": "This event happens after the creation of the package and before potential delivery attempts or failed deliveries.",
+      "attributes": {
+        "ocel_time": {
+          "meaning": "The timestamp when the package was sent out for delivery.",
+          "value_source": "events",
+          "repair_hint": "Use the actual time recorded in the event log."
+        },
+        "resource": {
+          "meaning": "The identifier of the shipper responsible for sending the package.",
+          "value_source": "object_id",
+          "repair_hint": "Assign the id of the corresponding shipper object."
+        }
+      }
+    },
+    "payment reminder": {
+      "table": "event_PaymentReminder",
+      "represents": "The timestamp when the payment reminder event occurs.",
+      "id_note": "Ocel_id values are opaque tokens that uniquely identify each payment reminder event within the log.",
+      "lifecycle_note": "This event type typically comes after 'payment reminder' in the process order, suggesting it may be related to failed delivery or other issues needing resolution before final payment.",
+      "attributes": {
+        "ocel_time": {
+          "meaning": "The timestamp of when the payment reminder was issued.",
+          "value_source": "events",
+          "repair_hint": "A repair agent should fill a genuinely missing value with the actual time recorded in the log."
+        }
+      }
+    },
+    "reorder item": {
+      "table": "event_ReorderItem",
+      "represents": "The time and employee when an item is reordered in the process.",
+      "id_note": "OCEL IDs are opaque tokens that uniquely identify each reorder event, containing no explicit information about the content of the event but ensuring its uniqueness.",
+      "lifecycle_note": "Reorder events typically occur after 'item out of stock' and before 'confirm order'.",
+      "attributes": {
+        "ocel_time": {
+          "meaning": "The timestamp when the reorder event occurs.",
+          "value_source": "events",
+          "repair_hint": "Use the actual time recorded in the event log."
+        },
+        "resource": {
+          "meaning": "The employee who initiated the reorder process.",
+          "value_source": "unknown",
+          "repair_hint": "Identify the employee from the corresponding 'employee' qualifier or attribute."
+        }
+      }
+    },
+    "failed delivery": {
+      "table": "event_FailedDelivery",
+      "represents": "A failed delivery event where the package was not successfully delivered to the customer.",
+      "id_note": "The ocel_id values are opaque tokens that uniquely identify each failed delivery event, containing no meaningful information beyond their uniqueness.",
+      "lifecycle_note": "This event type occurs after the package has been shipped but before it is delivered. Typically, 'create package' and 'send package' come right before it, while 'package delivered' or 'payment reminder' follow if applicable.",
+      "attributes": {
+        "ocel_time": {
+          "meaning": "The timestamp when the failed delivery event occurred.",
+          "value_source": "events",
+          "repair_hint": "Use the recorded time from the event log."
+        },
+        "resource": {
+          "meaning": "The entity responsible for delivering the package, identified by their name.",
+          "value_source": "domain_knowledge",
+          "repair_hint": "Assign a known shipper based on the resource attribute's value."
+        }
+      }
+    }
+  },
+  "qualifiers": {
+    "item": "",
+    "product": "",
+    "employee": "",
+    "order": "",
+    "customer": "",
+    "shipper": "",
+    "shipped package": "",
+    "sales person": "",
+    "packer": "",
+    "forwarder": "",
+    "creates": "",
+    "is a": "",
+    "contains": "",
+    "comprises": "",
+    "places": "",
+    "shipped by": "",
+    "packed by": "",
+    "forwarded by": "",
+    "secondarySalesRep": "",
+    "primarySalesRep": ""
+  },
+  "warnings": []
+}

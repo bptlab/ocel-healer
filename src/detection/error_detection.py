@@ -385,6 +385,10 @@ def detect_duplicate_objects_on_attributes(src: SqliteInput) -> pl.DataFrame:
 
     One row is emitted per duplicate group.  ``ocel_ids`` lists every id that
     shares the same attribute fingerprint (comma-separated).
+
+    A single shared value is no evidence of a duplicate (two orders can cost
+    the same), so types with fewer than two attributes add ``ocel_time`` to
+    the fingerprint, and groups whose attributes are all NULL are skipped.
     """
     with _connect(src) as conn:
         rows: list[dict] = []
@@ -392,9 +396,15 @@ def detect_duplicate_objects_on_attributes(src: SqliteInput) -> pl.DataFrame:
             attr_cols = [c for c, _ in _column_info(conn, table)]
             if not attr_cols:
                 continue
+            n_attrs = len(attr_cols)
+            if n_attrs < 2 and _has_column(conn, table, "ocel_time"):
+                attr_cols = ["ocel_time", *attr_cols]
             quoted = ", ".join(f'"{c}"' for c in attr_cols)
+            # Initial-state rows only: change rows leave unchanged columns NULL.
+            initial = (' WHERE "ocel_changed_field" IS NULL'
+                       if _has_column(conn, table, "ocel_changed_field") else "")
             raw = conn.execute(
-                f'SELECT ocel_id, {quoted} FROM "{table}"'
+                f'SELECT DISTINCT ocel_id, {quoted} FROM "{table}"{initial}'
             ).fetchall()
 
             # Group ocel_ids by their attribute fingerprint.
@@ -404,7 +414,7 @@ def detect_duplicate_objects_on_attributes(src: SqliteInput) -> pl.DataFrame:
                 groups.setdefault(key, []).append(ocel_id)
 
             for key, ids in groups.items():
-                if len(ids) < 2:
+                if len(set(ids)) < 2 or all(v is None for v in key[-n_attrs:]):
                     continue
                 rows.append({
                     "object_type": ocel_type,
@@ -449,9 +459,12 @@ def detect_duplicate_events_on_attributes(src: SqliteInput) -> pl.DataFrame:
     """Find events within the same type-table that share identical attribute
     values but carry different ocel_ids.
 
-    Direct event-side mirror of :func:`detect_duplicate_objects_on_attributes`.
-    One row is emitted per duplicate group; ``ocel_ids`` lists every id
-    that shares the same attribute fingerprint (comma-separated).
+    Event-side mirror of :func:`detect_duplicate_objects_on_attributes`,
+    except that ``ocel_time`` is part of the fingerprint: events of one type
+    by the same resource are normal, the same ones at the same instant are
+    not. Event types without attributes are skipped (time alone is no
+    fingerprint). One row is emitted per duplicate group; ``ocel_ids``
+    lists every id that shares the fingerprint (comma-separated).
     """
     with _connect(src) as conn:
         rows: list[dict] = []
@@ -459,6 +472,7 @@ def detect_duplicate_events_on_attributes(src: SqliteInput) -> pl.DataFrame:
             attr_cols = [c for c, _ in _column_info(conn, table)]
             if not attr_cols:
                 continue
+            attr_cols = ["ocel_time", *attr_cols]
             quoted = ", ".join(f'"{c}"' for c in attr_cols)
             raw = conn.execute(
                 f'SELECT ocel_id, {quoted} FROM "{table}"'
@@ -721,6 +735,13 @@ def detect_missing_object(src: SqliteInput) -> pl.DataFrame:
                     break
             if inferred is None and ocel_qualifier in _qualifier_to_type:
                 inferred = _qualifier_to_type[ocel_qualifier]
+            if inferred is None and isinstance(ocel_qualifier, str):
+                # Multi-word qualifiers that name the type, e.g.
+                # `shipped package` → `packages`.
+                for word in ocel_qualifier.split():
+                    if word in _qualifier_to_type:
+                        inferred = _qualifier_to_type[word]
+                        break
             if inferred is None:
                 # Opaque id (no prefix, no qualifier hint) → leave to the
                 # dangling detector; we'd only be guessing.

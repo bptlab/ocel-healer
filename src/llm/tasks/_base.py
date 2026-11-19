@@ -209,6 +209,12 @@ class IssueTask(ABC):
         """Routable override target when the LLM declines / gate trips. Default: None."""
         return None
 
+    def rule_action(self, conn: sqlite3.Connection, row: dict) -> "ActionResult | None":
+        """A repair that needs no LLM (e.g. an unambiguous match). When it
+        returns an ActionResult, `suggest_repair` uses it and skips the LLM.
+        Default: None."""
+        return None
+
     # --- private context helpers ------------------------------------------
 
     def _attach_anchor(

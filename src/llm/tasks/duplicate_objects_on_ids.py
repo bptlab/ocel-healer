@@ -1,6 +1,41 @@
 from src.llm.actions import ActionResult
 from src.llm.schemas import DuplicateResolutionOutput
+from src.llm.sql_utils import quote, table_for_type
 from src.llm.tasks._base import ResolutionTask
+
+
+def duplicate_rows_context(conn, ids: list[str], kind: str) -> list[dict]:
+    """One entry per duplicate row; `has_attribute_row` says whether the
+    row's type has a matching row in its per-type attribute table — the
+    genuine type usually does, a bogus copy usually doesn't."""
+    placeholders = ", ".join("?" * len(ids))
+    rows = conn.execute(
+        f"SELECT ocel_id, ocel_type FROM {kind} WHERE ocel_id IN ({placeholders})", ids,
+    ).fetchall()
+    out = []
+    for ocel_id, ocel_type in rows:
+        sub = table_for_type(conn, ocel_type, kind=kind)
+        has = sub is not None and conn.execute(
+            f"SELECT 1 FROM {quote(sub)} WHERE ocel_id = ? LIMIT 1", (ocel_id,)
+        ).fetchone() is not None
+        out.append({"ocel_id": ocel_id, "ocel_type": ocel_type, "has_attribute_row": has})
+    return out
+
+
+def drop_conflicting_type(row: dict, payload: dict, unique_types: list[str], table: str) -> ActionResult | None:
+    """Delete every row of one non-canonical type. Further wrong types or
+    same-type copies are handled when the issue is re-detected."""
+    wanted = (payload.get("canonical_type") or "").strip().lower()
+    keep = next((t for t in unique_types if t.lower() == wanted), None)
+    if keep is None:
+        return None
+    drop = next(t for t in unique_types if t != keep)
+    return ActionResult.delete_all(
+        target_table=table,
+        target_pk={"ocel_id": row.get("ocel_id"), "ocel_type": drop},
+        reason=f"Keeping type {keep!r}; deleting the rows typed {drop!r}. "
+               + (payload.get("rationale") or "").strip(),
+    )
 
 
 class DuplicateObjectsOnIds(ResolutionTask):
@@ -17,10 +52,11 @@ class DuplicateObjectsOnIds(ResolutionTask):
     """
 
     INPUTS = """
-        - violation.ocel_ids     comma-separated list of duplicate ocel_ids
-                                 (typically the same id repeated)
-        - duplicate_rows         list of {ocel_id, ocel_type} for each
-                                 duplicate row
+        - violation.ocel_id      the shared id of the duplicate rows
+        - duplicate_rows         list of {ocel_id, ocel_type,
+                                 has_attribute_row} for each duplicate
+                                 row; has_attribute_row=true means the
+                                 type's attribute table holds this id
         - object                 the anchor record (one of the duplicates)
         - events                 up to 8 events touching this ocel_id;
                                  their activities and qualifiers indicate
@@ -39,6 +75,10 @@ class DuplicateObjectsOnIds(ResolutionTask):
            id, entries are typically identical strings — that's expected;
            the downstream `DELETE FROM object WHERE ocel_id IN (...)` uses
            them as-is.
+        5. If the rows disagree on type, set `canonical_type` to the
+           surviving `ocel_type`, spelled exactly as in `duplicate_rows`.
+           A row with has_attribute_row=true is strong evidence for its
+           type.
     """
 
     EXAMPLES = """
@@ -47,21 +87,18 @@ class DuplicateObjectsOnIds(ResolutionTask):
         events = [{activity: 'place_order', qualifier: 'customer'}]
         → {"canonical_id": "o-1",
            "ids_to_delete": ["o-1"],
+           "canonical_type": "customer",
            "rationale": "kept the row with ocel_type='customer'; events qualify this id as a customer. Marked the NULL-type row for removal.",
            "confidence": 0.9}
     """
 
     def extend_context(self, conn, ctx: dict, row: dict) -> None:
-        dup_ids = row.get("ocel_ids", "")
+        # The detector emits one `ocel_id`; `ocel_ids` is accepted for joined lists.
+        dup_ids = row.get("ocel_ids") or row.get("ocel_id") or ""
         ids = [i.strip() for i in str(dup_ids).split(",") if i.strip()]
         if not ids:
             return
-        placeholders = ", ".join("?" * len(ids))
-        rows = conn.execute(
-            f"SELECT ocel_id, ocel_type FROM object WHERE ocel_id IN ({placeholders})",
-            ids,
-        ).fetchall()
-        ctx["duplicate_rows"] = [{"ocel_id": r[0], "ocel_type": r[1]} for r in rows]
+        ctx["duplicate_rows"] = duplicate_rows_context(conn, ids, "object")
 
     def parse_payload(self, row: dict, payload: dict) -> ActionResult:
         ocel_id = row.get("ocel_id")
@@ -82,7 +119,12 @@ class DuplicateObjectsOnIds(ResolutionTask):
                 ),
             )
 
-        # Types differ → surface LLM suggestion as unrouted noop for manual review.
+        # Types differ → drop the rows of a type the LLM did not keep.
+        action = drop_conflicting_type(row, payload, unique_types, "object")
+        if action is not None:
+            return action
+
+        # No usable canonical type → surface LLM suggestion as unrouted noop for manual review.
         canonical = payload.get("canonical_id")
         rationale = (payload.get("rationale") or "").strip()
         if not canonical:

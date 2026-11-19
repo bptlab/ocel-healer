@@ -131,16 +131,43 @@ def _capture_and_update(
     Centralizes the "capture pre-corruption value, then corrupt" pattern so
     injectors can report `original_values` in their return dict instead of
     just the affected id.
+
+    On object type tables only the initial-state row
+    (``ocel_changed_field IS NULL``) is touched, so one injection corrupts
+    one row instead of the object's whole change history.
     """
+    where = f"{id_col} = ?"
+    if _has_changed_field(conn, table):
+        where += " AND ocel_changed_field IS NULL"
     row = conn.execute(
-        f'SELECT "{column}" FROM "{table}" WHERE {id_col} = ?', (ocel_id,)
+        f'SELECT "{column}" FROM "{table}" WHERE {where}', (ocel_id,)
     ).fetchone()
     old_value = row[0] if row else None
     conn.execute(
-        f'UPDATE "{table}" SET "{column}" = ? WHERE {id_col} = ?',
+        f'UPDATE "{table}" SET "{column}" = ? WHERE {where}',
         (new_value, ocel_id),
     )
     return old_value
+
+
+def _has_changed_field(conn: sqlite3.Connection, table: str) -> bool:
+    return bool(conn.execute(
+        f"SELECT COUNT(*) FROM pragma_table_info('{table}') "
+        "WHERE name = 'ocel_changed_field'",
+    ).fetchone()[0])
+
+
+def _drop_column(conn: sqlite3.Connection, table: str, column: str) -> object:
+    """Remove `column` from `table` and return the dropped values as
+    ``{ocel_id: value}`` (initial-state rows only). Uses ``ALTER TABLE …
+    DROP COLUMN`` (SQLite >= 3.35); the OCEL type tables carry no
+    constraints or indexes that would block it."""
+    where = " WHERE ocel_changed_field IS NULL" if _has_changed_field(conn, table) else ""
+    values = dict(conn.execute(
+        f'SELECT ocel_id, "{column}" FROM "{table}"{where}'
+    ).fetchall())
+    conn.execute(f'ALTER TABLE "{table}" DROP COLUMN "{column}"')
+    return values
 
 
 def _clone_object_row(

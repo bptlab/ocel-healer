@@ -44,8 +44,28 @@ def suggest_repair(
     task = get_task(issue_key)
     if task is None:
         return actions.unknown_issue_noop(issue_key)
+    if isinstance(task, DetectionTask) and row.get("_detected_suggestion") is not None:
+        # An LLM flag the user agreed to already carries the fix; asking
+        # again could contradict the detection it came from.
+        verdict = DetectionResult(
+            flagged=True,
+            rationale=str(row.get("_detected_rationale") or ""),
+            confidence=float(row.get("_detected_confidence") or 0.0),
+            suggested_value=row["_detected_suggestion"],
+        )
+        return actions.from_action_result(
+            task, row, task.action_for_flag(row, verdict),
+            confidence=verdict.confidence, rationale=verdict.rationale,
+            proposed_value=verdict.suggested_value,
+        )
     with _connect(sqlite_path) as conn:
-        ctx = task.build_context(conn, row, use_hints=use_hints)
+        ruled = task.rule_action(conn, row)
+        if ruled is None:
+            ctx = task.build_context(conn, row, use_hints=use_hints)
+    if ruled is not None:
+        return actions.from_action_result(
+            task, row, ruled, confidence=1.0, rationale=ruled.reason,
+        )
     try:
         payload = _call_task_or_legacy(task, ctx)
     except LLMOutputInvalid as e:

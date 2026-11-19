@@ -40,8 +40,8 @@ def neighbor_events_ctx(
 
     The neighbor list is capped at `max_neighbors`. When more neighbors are
     available, we prefer a balanced slice around the anchor's own timestamp
-    (if known) — half preceding, half following — falling back to the first
-    N in sorted order.
+    (if known) — half preceding, half following — otherwise the events of
+    the anchor's most specific objects (fewest events).
     """
     ctx: dict[str, Any] = {}
 
@@ -162,7 +162,17 @@ def neighbor_events_ctx(
                 slice_.extend(extras)
             with_time = slice_
         else:
-            with_time = with_time[:max_neighbors]
+            # No anchor time: prefer events of the most specific objects
+            # (fewest events, e.g. the order and its items) over those of
+            # busy hubs like products or customers, whose earliest events
+            # belong to unrelated cases.
+            n_events = dict(conn.execute(
+                f"SELECT ocel_object_id, COUNT(*) FROM event_object "
+                f"WHERE ocel_object_id IN ({placeholders}) GROUP BY ocel_object_id",
+                object_ids,
+            ).fetchall())
+            ranked = sorted(with_time, key=lambda e: n_events.get(e["ocel_object_id"], 0))
+            with_time = sorted(ranked[:max_neighbors], key=lambda e: _ts_key(e["ocel_time"]))
 
     ctx["neighbor_events"] = with_time
     # Format hint: first non-null neighbor timestamp, verbatim.
