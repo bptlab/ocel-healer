@@ -58,13 +58,13 @@ class DuplicateEventsOnIds(ResolutionTask):
     """
 
     EXAMPLES = """
-        duplicate_rows = [{ocel_id: 'e-1', ocel_type: 'place order'},
-                          {ocel_id: 'e-1', ocel_type: null}]
-        related_objects = [{ocel_type: 'order', ocel_qualifier: 'order'}]
-        → {"canonical_id": "e-1",
-           "ids_to_delete": ["e-1"],
-           "canonical_type": "place order",
-           "rationale": "kept the row with ocel_type='place order'; related order object qualifies this event as a place-order activity. Marked the NULL-type row for removal.",
+        duplicate_rows = [{ocel_id: 'ev-1', ocel_type: 'E1', has_attribute_row: true},
+                          {ocel_id: 'ev-1', ocel_type: null, has_attribute_row: false}]
+        related_objects = [{ocel_type: 'type A', ocel_qualifier: 'a'}]
+        → {"canonical_id": "ev-1",
+           "ids_to_delete": ["ev-1"],
+           "canonical_type": "E1",
+           "rationale": "kept the row with ocel_type='E1', which also has an attribute row; marked the NULL-type row for removal.",
            "confidence": 0.9}
     """
 
@@ -88,6 +88,12 @@ class DuplicateEventsOnIds(ResolutionTask):
                 {"ocel_object_id": oid, "ocel_type": otype, "ocel_qualifier": qual}
                 for oid, otype, qual in related
             ]
+
+    def rule_action(self, conn, row: dict) -> ActionResult | None:
+        """All duplicates share one type: keep one row, no LLM needed."""
+        types = {t.strip() for t in (row.get("ocel_types") or "").split(",")
+                 if t.strip() and t.strip().lower() != "none"}
+        return self.parse_payload(row, {}) if row.get("ocel_id") and len(types) == 1 else None
 
     def parse_payload(self, row: dict, payload: dict) -> ActionResult:
         ocel_id = row.get("ocel_id")

@@ -26,7 +26,7 @@ class MissingAttributeValue(ResolutionTask):
                                      `violation.attribute`)
         - object.attributes          the anchor's other attributes — they
                                      often correlate with the missing one
-                                     (e.g. `country` implies `currency`)
+                                     (e.g. `attr_x` determines `attr_y`)
         - events                     up to 8 events touching the anchor
         - peer_objects               up to 5 peers of the same type, full
                                      attribute rows — the pattern here
@@ -43,15 +43,15 @@ class MissingAttributeValue(ResolutionTask):
         1. Read `peer_objects` first. They fix the value's type, unit,
            casing, and format. Match them.
         2. Look at the anchor's other attributes and events for
-           correlations (country → currency, activity `pay_in_eur` →
-           `EUR`, etc.).
+           correlations (peers with the same `attr_x` share `attr_y`; an
+           activity named `E_v1` implies the value `v1`, etc.).
         3. If `examination_hints` are present, follow them:
            - `examination_hints.attribute.known_values` are values this
              column is OBSERVED to take in this log (the list may be
              incomplete when many rows are missing). Strongly prefer
              returning one of them verbatim: map the evidence onto the
-             closest listed value — e.g. known_values ["Gold", "Silver"]
-             and the evidence says "silver tier" → answer "Silver".
+             closest listed value — e.g. known_values ["V1", "V2"] and the
+             evidence says "v2 level" → answer "V2".
            - `examination_hints.attribute.repair_hint` states the
              log-specific way to infer this attribute;
              `domain_knowledge_applicable` tells you whether real-world
@@ -61,20 +61,20 @@ class MissingAttributeValue(ResolutionTask):
              entity's real-world name — identify the entity and recall the
              factual attribute value from your knowledge.
         4. When local context is silent, fall back to stable real-world
-           knowledge about the entity named in `anchor_entity.name` (a
-           product's typical weight, a country's currency, …). Match the
-           unit used by the peers.
+           knowledge about the entity named in `anchor_entity.name`. Match
+           the unit used by the peers.
         5. Never return null. If evidence is weak, still return your best
            concrete guess and lower `confidence` accordingly (e.g. 0.3).
     """
 
     EXAMPLES = """
-        violation.attribute_name = 'currency'
-        peer_objects = [{currency: 'EUR'}, {currency: 'EUR'}, {currency: 'EUR'}]
-        events = [{activity: 'pay_in_eur'}]
-        → {"inferred_value": "EUR",
-           "rationale": "all 3 peers use 'EUR' and activity 'pay_in_eur' confirms it",
-           "confidence": 0.95}
+        violation.attribute_name = 'attr_y'
+        object.attributes = {attr_x: 'k1'}
+        peer_objects = [{attr_x: 'k1', attr_y: 'V1'}, {attr_x: 'k1', attr_y: 'V1'},
+                        {attr_x: 'k2', attr_y: 'V2'}]
+        → {"inferred_value": "V1",
+           "rationale": "both peers with attr_x 'k1' have attr_y 'V1'",
+           "confidence": 0.9}
     """
 
     def extend_context(self, conn, ctx: dict, row: dict) -> None:

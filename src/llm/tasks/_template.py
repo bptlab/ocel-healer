@@ -26,8 +26,8 @@ DECISION_RULES = textwrap.dedent(
        candidate_objects, candidate_events, duplicate_attribute_values, …).
        Never invent a value outside the closed set.
     2. Match the format, casing, and units of the peers or the anchor's
-       other attributes. If peers use `EUR`, don't reply `Eur`. If peers
-       use `kg`, don't reply in `g`.
+       other attributes. If peers write `ABC`, don't reply `Abc`. If peers
+       write `12.5`, don't reply `12500`.
     3. Your entire reply is one JSON object matching <output_schema> —
        no prose, no markdown fences, no fields outside the schema.
     """

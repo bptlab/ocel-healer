@@ -27,8 +27,7 @@ class DanglingO2ORelationship(ResolutionTask):
     INPUTS = """
         - violation.missing_side    'source' or 'target' — which end is missing
         - violation.ocel_qualifier  names the relationship (often implies
-                                    the type of the missing end, e.g.
-                                    `belongs_to`, `part_of`, `parent`)
+                                    the type of the missing end)
         - object                    the known end's id, type, attributes
         - candidate_objects         up to 10 {ocel_id, ocel_type,
                                     similarity}: the existing ids closest
@@ -38,7 +37,8 @@ class DanglingO2ORelationship(ResolutionTask):
     METHOD = """
         1. Use `violation.ocel_qualifier` together with the known end's
            type to infer the expected `ocel_type` of the missing end
-           (e.g. an order that `belongs_to` implies a customer).
+           (e.g. a `type A` source under qualifier `q1` always points to
+           `type B` targets).
         2. Filter `candidate_objects` to entries whose type matches.
         3. Among survivors, prefer the id that differs from the dangling
            id by a plausible typo (one changed, missing, doubled or swapped
@@ -49,12 +49,13 @@ class DanglingO2ORelationship(ResolutionTask):
 
     EXAMPLES = """
         violation.missing_side = 'target'
-        violation.ocel_qualifier = 'belongs_to'
-        object = {ocel_id: 'o-42', ocel_type: 'order'}
-        candidate_objects = [{ocel_id: 'c-42', ocel_type: 'customer'},
-                             {ocel_id: 'p-1',  ocel_type: 'product'}]
-        → {"inferred_referent": "c-42",
-           "rationale": "'belongs_to' from an order implies customer; c-42 matches and shares the '-42' suffix",
+        violation.ocel_target_id = 'b-4422'
+        violation.ocel_qualifier = 'q1'
+        object = {ocel_id: 'a-42', ocel_type: 'type A'}
+        candidate_objects = [{ocel_id: 'b-422', ocel_type: 'type B', similarity: 0.89},
+                             {ocel_id: 'c-4422', ocel_type: 'type C', similarity: 0.83}]
+        → {"inferred_referent": "b-422",
+           "rationale": "'q1' from a type A object points to type B; 'b-422' differs from 'b-4422' by one doubled character",
            "confidence": 0.85}
     """
 

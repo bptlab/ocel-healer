@@ -237,7 +237,7 @@ def inject_missing_attribute_value(
         ).fetchall()
     else:
         rows = conn.execute(
-            f'SELECT ocel_id FROM "{table}" {where} LIMIT ?', (count,)
+            f'SELECT ocel_id FROM "{table}" {where} ORDER BY ocel_id LIMIT ?', (count,)
         ).fetchall()
     affected = [r[0] for r in rows]
     for ocel_id in affected:

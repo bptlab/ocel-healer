@@ -51,7 +51,7 @@ def _injected(eval_log: str, name: str, tmp_path) -> str:
 def test_rule_cells_restore_clean_log(eval_log, tmp_path, only):
     for rec in es.evaluate(_args(eval_log, only), tmp_path):
         assert rec["error"] == ""
-        assert rec["lenient"] and rec["strict"], rec
+        assert rec["strict"], rec
 
 
 def test_duplicate_group_with_own_relations_is_kept(eval_log):
@@ -90,7 +90,7 @@ def test_placeholder_emptied_then_followed_up(eval_log, tmp_path, monkeypatch):
     [rec] = es.evaluate(_args(eval_log, "incorrect_event_attribute_datatype/easy"), tmp_path)
     assert keys == ["incorrect_event_attribute_datatype", "missing_event_attribute_value"]
     assert rec["action_kinds"] == "update;followup:noop"
-    assert rec["new_violations"] == "missing_event_attribute_value+1" and not rec["lenient"]
+    assert rec["new_violations"] == "missing_event_attribute_value+1" and not rec["strict"]
 
 
 def test_peer_price_is_not_a_duplicate(eval_log, tmp_path, monkeypatch):
@@ -102,7 +102,7 @@ def test_peer_price_is_not_a_duplicate(eval_log, tmp_path, monkeypatch):
     monkeypatch.setattr(es, "suggest_repair", lambda key, row, db: {"kind": "update"})
     monkeypatch.setattr(es, "apply_repair", apply)
     [rec] = es.evaluate(_args(eval_log, "missing_attribute_value/hard"), tmp_path)
-    assert rec["lenient"] and rec["strict"] and rec["new_violations"] == ""
+    assert rec["strict"] and rec["new_violations"] == ""
 
 
 def test_missing_event_insert_fills_attributes(eval_log, tmp_path):
@@ -128,3 +128,34 @@ def test_missing_object_insert_times_first_event(eval_log, tmp_path):
         task.build_context(conn, row)
     result = task.parse_payload(row, {"ocel_type": "packages", "attributes": {"weight": 8.484}})
     assert result.inserts[1]["columns"]["ocel_time"] == "2023-04-08 01:00:00"
+
+
+def test_decoded_role_restores_clean_log(eval_log, tmp_path, monkeypatch):
+    """The scrambled role is the employee's real one, so decoding it is exact."""
+    def apply(db, action, dry_run=True):
+        with sqlite3.connect(db) as conn:
+            (oid, blob), = conn.execute(
+                "SELECT ocel_id, role FROM object_Employees WHERE typeof(role) = 'blob'").fetchall()
+            conn.execute("UPDATE object_Employees SET role = ? WHERE ocel_id = ? "
+                         "AND ocel_changed_field IS NULL", (blob.decode("utf-16-le"), oid))
+    monkeypatch.setattr(es, "suggest_repair", lambda key, row, db: {"kind": "update"})
+    monkeypatch.setattr(es, "apply_repair", apply)
+    [rec] = es.evaluate(_args(eval_log, "incorrect_attribute_datatype/hard"), tmp_path)
+    assert rec["strict"]
+
+
+def test_reinsertion_followed_up(eval_log, tmp_path, monkeypatch):
+    """A reinserted event missing its resource gets one follow-up repair."""
+    keys = []
+    def repair(key, row, db):
+        keys.append(key)
+        if key == "missing_event":
+            return {"kind": "insert", "inserts": [
+                {"table": "event", "columns": {"ocel_id": "place_o-990002", "ocel_type": "place order"}},
+                {"table": "event_PlaceOrder", "columns": {"ocel_id": "place_o-990002",
+                                                          "ocel_time": "2023-04-03 16:36:55"}}]}
+        return {"kind": "noop", "rationale": "stub"}
+    monkeypatch.setattr(es, "suggest_repair", repair)
+    [rec] = es.evaluate(_args(eval_log, "missing_event/easy"), tmp_path)
+    assert keys == ["missing_event", "missing_event_attribute_value"]
+    assert rec["action_kinds"] == "insert;followup:noop"

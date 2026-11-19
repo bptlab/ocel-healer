@@ -74,8 +74,8 @@ class MissingObject(ResolutionTask):
     METHOD = """
         1. `inferred_type_from_prefix` is usually correct. Only override it
            when the qualifier or the referring event's type contradicts it
-           (e.g. an id shaped like `orders:o-…` but referenced under
-           qualifier `product` from a `pick item` event is suspicious).
+           (e.g. an id shaped like `typeA:a-…` but referenced under the
+           qualifier of another type is suspicious).
         2. Use `peer_columns` as the exact key set for `attributes`. If
            `peer_columns` is empty, produce `attributes: {}`.
         3. For each attribute, produce a value in the same format, unit,
@@ -89,25 +89,25 @@ class MissingObject(ResolutionTask):
     """
 
     EXAMPLES = """
-        violation = {ocel_object_id: 'orders:o-991000',
-                     inferred_type_from_prefix: 'orders',
-                     ocel_qualifier: 'order'}
-        related_event = {ocel_id: 'place_order:990001', ocel_type: 'place order'}
-        peer_columns = ['price']
-        peer_objects = [{ocel_id: 'o-990001', price: 42.5}, ...]
-        → {"ocel_type": "orders",
-           "attributes": {"price": 42.5},
-           "rationale": "id prefix and qualifier both say 'orders'; matched price shape from peers",
+        violation = {ocel_object_id: 'a-1099',
+                     inferred_type_from_prefix: 'type A',
+                     ocel_qualifier: 'a'}
+        related_event = {ocel_id: 'ev-12', ocel_type: 'E1'}
+        peer_columns = ['attr_x']
+        peer_objects = [{ocel_id: 'a-1001', attr_x: 42.5}, ...]
+        → {"ocel_type": "type A",
+           "attributes": {"attr_x": 42.5},
+           "rationale": "id prefix and qualifier both say 'type A'; matched attr_x shape from peers",
            "confidence": 0.85}
 
-        violation = {ocel_object_id: 'products:Echo Show 10',
-                     inferred_type_from_prefix: 'products',
-                     ocel_qualifier: 'product'}
-        peer_columns = ['weight', 'price']
-        peer_objects = [{ocel_id: 'iPhone 8', weight: 0.148, price: 599.0}, ...]
-        → {"ocel_type": "products",
-           "attributes": {"weight": 0.3, "price": 199.0},
-           "rationale": "matched products' weight/price shape; picked mid-range values as no external signal",
+        violation = {ocel_object_id: 'Entity Name 7',
+                     inferred_type_from_prefix: 'type B',
+                     ocel_qualifier: 'b'}
+        peer_columns = ['attr_x', 'attr_y']
+        peer_objects = [{ocel_id: 'Entity Name 3', attr_x: 0.15, attr_y: 600.0}, ...]
+        → {"ocel_type": "type B",
+           "attributes": {"attr_x": 0.3, "attr_y": 200.0},
+           "rationale": "matched the peers' attr_x/attr_y shape; picked mid-range values as there is no external signal",
            "confidence": 0.4}
     """
 

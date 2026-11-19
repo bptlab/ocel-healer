@@ -20,11 +20,51 @@ class IncorrectEventType(DetectionTask):
     kind = "event"
     OutputModel = InferredTypeOutput
 
-    TASK = """
+    DETECT_TASK = """
         An event row has a non-empty `ocel_type`, but that type may be incorrect.
-        Decide whether the current type is consistent with the event's id, the
-        objects it touches, and the qualifiers it uses. Flag a mismatch only
-        when the evidence points to a different type; otherwise return null.
+        Decide only WHETHER the current type is wrong, given the event's id, the
+        objects it touches, and the qualifiers it uses. Do not propose a
+        replacement: that is a separate step.
+    """
+
+    DETECT_METHOD = """
+        1. Compare the current `ocel_type` against these signals, most to
+           least informative:
+             - The `ocel_id`. An activity keyword embedded in the id (e.g.
+               `E2:1001` or `e2_x-1001` for an `E2` event) that contradicts
+               the current type is STRONG on its own — do NOT downgrade it
+               to "weak" just because touched objects are sparse.
+             - The touched objects' types + qualifiers in `related_objects`:
+               an event whose objects and roles match those of another
+               event type likely belongs to that type.
+             - The event's own attribute row.
+        2. `is_violation: true` when this evidence contradicts the current
+           type, even if you are not sure which type is right.
+        3. `is_violation: false` when the evidence is consistent with the
+           current type, or when the id is opaque (UUID or numeric with no
+           activity keyword) AND touched objects are absent or neutral.
+    """
+
+    DETECT_EXAMPLES = """
+        violation = {ocel_id: 'E2:1010', ocel_type: 'E1'}
+        related_objects = [{ocel_type: 'type A', ocel_qualifier: 'a'}]
+        candidate_types = ['E1', 'E2', 'E3', 'E4']
+        → {"is_violation": true,
+           "rationale": "id keyword 'E2' contradicts the current 'E1' type",
+           "confidence": 0.95}
+
+        violation = {ocel_id: 'ev-7', ocel_type: 'E2'}
+        related_objects = [{ocel_type: 'type A', ocel_qualifier: 'a'}]
+        candidate_types = ['E1', 'E2', 'E3']
+        → {"is_violation": false,
+           "rationale": "id is opaque; the touched type A object is consistent with 'E2'",
+           "confidence": 0.8}
+    """
+
+    TASK = """
+        This event's `ocel_type` has been judged incorrect. Infer the correct
+        type from `candidate_types`, using the event's id, the objects it
+        touches, and the qualifiers it uses.
     """
 
     INPUTS = """
@@ -39,42 +79,23 @@ class IncorrectEventType(DetectionTask):
     """
 
     METHOD = """
-        1. Compare the current `ocel_type` against three signals, most to
-           least informative:
-             - The `ocel_id`. An activity keyword embedded in the id (e.g.
-               `place_order`, `pay_order`, `pick_item`) that contradicts
-               the current type is STRONG on its own — do NOT downgrade it
-               to "weak" just because touched objects are sparse.
-             - The touched objects' types + qualifiers in `related_objects`.
-               For example, an event touching an `order` object with
-               qualifier `order` is likely an order-lifecycle activity;
-               one touching an `item` with qualifier `picked` suggests a
-               pick activity.
-             - The event's own attribute row.
-        2. If the evidence is consistent with the current type, return
-           `inferred_type: null`. Default to null only when the id is
-           opaque (UUID or numeric with no activity keyword) AND touched
-           objects are absent or neutral.
-        3. When the evidence contradicts the current type, return the one
-           value from `candidate_types` that best fits the evidence.
-        4. Never return the current `ocel_type` as `inferred_type` — if you
-           agree with it, return null.
+        1. Weigh the signals, most to least informative: an activity keyword
+           embedded in the `ocel_id` (e.g. `E2:1001` or `e2_x-1001` for an
+           `E2` event), the touched objects' types and qualifiers in
+           `related_objects`, and the event's own attribute row.
+        2. Return the one value from `candidate_types` that best fits the
+           evidence. It must differ from the current `ocel_type`.
+        3. Return `inferred_type: null` only when no other candidate fits
+           better than the current type.
     """
 
     EXAMPLES = """
-        violation = {ocel_id: 'pay_order:990010', ocel_type: 'place order'}
-        related_objects = [{ocel_type: 'order', ocel_qualifier: 'order'}]
-        candidate_types = ['place order', 'pay order', 'pick item', 'send package']
-        → {"inferred_type": "pay order",
-           "rationale": "id keyword 'pay_order' contradicts the current 'place order' type; touched order object is consistent with either",
+        violation = {ocel_id: 'E2:1010', ocel_type: 'E1'}
+        related_objects = [{ocel_type: 'type A', ocel_qualifier: 'a'}]
+        candidate_types = ['E1', 'E2', 'E3', 'E4']
+        → {"inferred_type": "E2",
+           "rationale": "id keyword 'E2' names the type",
            "confidence": 0.95}
-
-        violation = {ocel_id: 'e-7', ocel_type: 'pay order'}
-        related_objects = [{ocel_type: 'order', ocel_qualifier: 'order'}]
-        candidate_types = ['place order', 'pay order', 'pick item']
-        → {"inferred_type": null,
-           "rationale": "id is opaque; touched order object is consistent with the current 'pay order' type",
-           "confidence": 0.8}
     """
 
     def build_context(self, conn, row, *, use_hints=True):
@@ -115,7 +136,7 @@ class IncorrectEventType(DetectionTask):
                 for oid, otype, qual in related
             ]
 
-    def parse_detection(self, row: dict, payload: dict) -> DetectionResult:
+    def parse_repair(self, row: dict, payload: dict) -> DetectionResult:
         rationale = str(payload.get("rationale", "") or "").strip()
         confidence = float(payload.get("confidence", 0.0) or 0.0)
         suggested = payload.get("inferred_type")

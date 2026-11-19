@@ -129,6 +129,8 @@ EXPECTED_COLLATERAL = {
     "missing_event": {"dangling_e2o_relationship"},
     "missing_object": {"dangling_e2o_relationship", "dangling_o2o_relationship"},
     "dangling_e2o_relationship": {"missing_event", "missing_object"},
+    # A confirm order relabelled as pay order lacks the pay order's `amount`.
+    "incorrect_event_type": {"missing_event_attribute_value"},
 }
 
 

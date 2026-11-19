@@ -10,16 +10,23 @@ from src.llm.tasks import get_task
 from src.llm.tasks._base import DetectionResult, DetectionTask, IssueTask
 
 
-def _build_messages(task: IssueTask, ctx: dict) -> tuple[str, str]:
-    """Return (system, user). System = base + family persona; user = task prompt + context."""
+def _build_messages(task: IssueTask, ctx: dict, prompt: str | None = None) -> tuple[str, str]:
+    """Return (system, user). System = base + family persona; user = task
+    prompt (or `prompt`) + context."""
     system = compose_persona(task.family) if task.family else BASE_PERSONA
     user = (
-        task.prompt
+        (prompt or task.prompt)
         + "\n\nContext:\n```json\n"
         + json.dumps(ctx, default=str, indent=2)
         + "\n```"
     )
     return system, user
+
+
+def _call_detection(task: DetectionTask, ctx: dict) -> dict:
+    """Ask a detection task's detection prompt (not its repair prompt)."""
+    system, user = _build_messages(task, ctx, task.detection_prompt)
+    return call_task(system, user, task.detection_output_model)
 
 
 def _call_task_or_legacy(task: IssueTask, ctx: dict) -> dict:
@@ -39,14 +46,26 @@ def suggest_repair(
 ) -> dict:
     """Ask the LLM how to repair `row`. Returns an action dict (kind='noop' if unsure).
 
+    `action["source"]` says who decided: "rule" (the task's `rule_action`,
+    no LLM call), "detection" (a confirmed missing-attribute flag, whose
+    finding is the fix) or "llm" (a repair call).
+
     `use_hints=False` builds the context without examination hints — used by
     the evaluation to measure the hints' effect."""
+    action, source = _suggest_repair(issue_key, row, sqlite_path, use_hints=use_hints)
+    return {**action, "source": source}
+
+
+def _suggest_repair(
+    issue_key: str, row: dict, sqlite_path: str, *, use_hints: bool
+) -> tuple[dict, str]:
     task = get_task(issue_key)
     if task is None:
-        return actions.unknown_issue_noop(issue_key)
-    if isinstance(task, DetectionTask) and row.get("_detected_suggestion") is not None:
-        # An LLM flag the user agreed to already carries the fix; asking
-        # again could contradict the detection it came from.
+        return actions.unknown_issue_noop(issue_key), "rule"
+    if (isinstance(task, DetectionTask) and not task.SEPARATE_REPAIR
+            and row.get("_detected_suggestion") is not None):
+        # A confirmed missing-attribute flag names the attribute, which is
+        # the fix itself; asking again could contradict it.
         verdict = DetectionResult(
             flagged=True,
             rationale=str(row.get("_detected_rationale") or ""),
@@ -57,7 +76,7 @@ def suggest_repair(
             task, row, task.action_for_flag(row, verdict),
             confidence=verdict.confidence, rationale=verdict.rationale,
             proposed_value=verdict.suggested_value,
-        )
+        ), "detection"
     with _connect(sqlite_path) as conn:
         ruled = task.rule_action(conn, row)
         if ruled is None:
@@ -65,7 +84,7 @@ def suggest_repair(
     if ruled is not None:
         return actions.from_action_result(
             task, row, ruled, confidence=1.0, rationale=ruled.reason,
-        )
+        ), "rule"
     try:
         payload = _call_task_or_legacy(task, ctx)
     except LLMOutputInvalid as e:
@@ -80,10 +99,10 @@ def suggest_repair(
         try:
             stub = {"confidence": 1.0,
                     "rationale": f"LLM output invalid: {e}"}
-            return actions.from_task_result(task, row, stub)
+            return actions.from_task_result(task, row, stub), "llm"
         except Exception:  # noqa: BLE001 -- parse_payload itself failed
-            return actions.malformed_output_noop(task, row, str(e))
-    return actions.from_task_result(task, row, payload)
+            return actions.malformed_output_noop(task, row, str(e)), "llm"
+    return actions.from_task_result(task, row, payload), "llm"
 
 
 def detect_with_llm(issue_key: str, row: dict, sqlite_path: str) -> DetectionResult:
@@ -104,7 +123,7 @@ def detect_with_llm(issue_key: str, row: dict, sqlite_path: str) -> DetectionRes
     with _connect(sqlite_path) as conn:
         ctx = task.build_context(conn, row)
     try:
-        payload = _call_task_or_legacy(task, ctx)
+        payload = _call_detection(task, ctx)
     except LLMOutputInvalid as e:
         return DetectionResult(
             flagged=False,

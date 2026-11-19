@@ -690,11 +690,46 @@ def apply_repair(
         where = " AND ".join(f"{quote(c)} = ?" for c in action["target_pk"])
         sql = f'UPDATE {quote(table)} SET {quote(col)} = ? WHERE {where}'
         params = (new_value, *action["target_pk"].values())
+        moves = (
+            _type_move(conn, table, action["target_pk"].get("ocel_id"), new_value)
+            if table in ("event", "object") and col == "ocel_type" else []
+        )
 
         header = f"-- {rationale}\n" if has_override else ""
-        rendered = f"{header}{sql}\n  with params = {params!r}"
+        rendered = "\n--\n".join(
+            f"{header if i == 0 else ''}{q}\n  with params = {p!r}"
+            for i, (q, p) in enumerate([(sql, params), *moves])
+        )
         if dry_run:
             return f"-- DRY RUN (no changes written)\n{rendered}"
         with conn:
             n = conn.execute(sql, params).rowcount
+            for q, p in moves:
+                conn.execute(q, p)
         return f"Committed: {n} row(s) affected.\n{rendered}"
+
+
+def _type_move(conn: sqlite3.Connection, kind: str, ocel_id: Any, new_type: Any) -> list[tuple[str, tuple]]:
+    """Statements that move an element's rows from its old type's table to
+    the new type's table when its `ocel_type` changes, so the element stays
+    where OCEL 2.0 expects it. Shared columns are copied, the rest are left
+    NULL. Nothing to move when the old type has no table (e.g. it was NULL)
+    or holds no row for this id."""
+    if ocel_id is None or new_type is None:
+        return []
+    old = [r[0] for r in conn.execute(
+        f"SELECT DISTINCT ocel_type FROM {kind} WHERE ocel_id = ?", (ocel_id,))]
+    tables = dict(conn.execute(f"SELECT ocel_type, ocel_type_map FROM {kind}_map_type"))
+    if len(old) != 1 or old[0] == new_type or old[0] not in tables or new_type not in tables:
+        return []
+    src, dst = f"{kind}_{tables[old[0]]}", f"{kind}_{tables[new_type]}"
+    if conn.execute(f"SELECT 1 FROM {quote(src)} WHERE ocel_id = ? LIMIT 1", (ocel_id,)).fetchone() is None:
+        return []
+    src_cols = [r[1] for r in conn.execute(f"PRAGMA table_info({quote(src)})")]
+    shared = ", ".join(quote(r[1]) for r in conn.execute(f"PRAGMA table_info({quote(dst)})")
+                       if r[1] in src_cols)
+    return [
+        (f"INSERT INTO {quote(dst)} ({shared}) SELECT {shared} FROM {quote(src)} WHERE ocel_id = ?",
+         (ocel_id,)),
+        (f"DELETE FROM {quote(src)} WHERE ocel_id = ?", (ocel_id,)),
+    ]

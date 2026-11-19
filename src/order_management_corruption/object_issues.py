@@ -41,7 +41,7 @@ def inject_duplicate_objects_on_ids(conn: sqlite3.Connection, ocel_id: str | Non
         ).fetchone()
     else:
         row = conn.execute(
-            "SELECT ocel_id, ocel_type FROM object WHERE ocel_type IS NOT NULL LIMIT 1"
+            "SELECT ocel_id, ocel_type FROM object WHERE ocel_type IS NOT NULL ORDER BY ocel_id LIMIT 1"
         ).fetchone()
     if row is None:
         return None
@@ -78,7 +78,7 @@ def inject_missing_object_type_null_employee(conn: sqlite3.Connection) -> dict |
     """missing_object_type Easy: NULL the ocel_type of an employee object."""
     obj_type = get_om_object_type("employees")
     row = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (obj_type,)
+        "SELECT ocel_id FROM object WHERE ocel_type = ? ORDER BY ocel_id LIMIT 1", (obj_type,)
     ).fetchone()
     if row is None:
         return None
@@ -92,7 +92,7 @@ def inject_missing_object_type_whitespace_product(conn: sqlite3.Connection) -> d
     on a product."""
     obj_type = get_om_object_type("products")
     row = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (obj_type,)
+        "SELECT ocel_id FROM object WHERE ocel_type = ? ORDER BY ocel_id LIMIT 1", (obj_type,)
     ).fetchone()
     if row is None:
         return None
@@ -110,7 +110,7 @@ def inject_missing_attribute_value_null_product_weight(conn: sqlite3.Connection)
     """missing_attribute_value Easy: NULL the weight of a product."""
     table = get_om_object_table("object_products")
     row = conn.execute(
-        f"SELECT ocel_id FROM {table} WHERE weight IS NOT NULL LIMIT 1"
+        f"SELECT ocel_id FROM {table} WHERE weight IS NOT NULL ORDER BY ocel_id LIMIT 1"
     ).fetchone()
     if row is None:
         return {"affected_ids": [], "original_values": {}}
@@ -123,7 +123,7 @@ def inject_missing_attribute_value_null_order_price(conn: sqlite3.Connection) ->
     """missing_attribute_value Hard: NULL price field in order."""
     table = get_om_object_table("object_orders")
     row = conn.execute(
-        f"SELECT ocel_id FROM {table} WHERE price IS NOT NULL LIMIT 1"
+        f"SELECT ocel_id FROM {table} WHERE price IS NOT NULL ORDER BY ocel_id LIMIT 1"
     ).fetchone()
     if row is None:
         return {"affected_ids": [], "original_values": {}}
@@ -142,7 +142,7 @@ def inject_incorrect_object_type_swap_order_to_employee(conn: sqlite3.Connection
     orders_type = get_om_object_type("orders")
     employee_type = get_om_object_type("employees")
     row = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (orders_type,)
+        "SELECT ocel_id FROM object WHERE ocel_type = ? ORDER BY ocel_id LIMIT 1", (orders_type,)
     ).fetchone()
     if row is None:
         return None
@@ -158,7 +158,7 @@ def inject_incorrect_object_type_swap_item_to_product(conn: sqlite3.Connection) 
     items_type = get_om_object_type("items")
     products_type = get_om_object_type("products")
     row = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (items_type,)
+        "SELECT ocel_id FROM object WHERE ocel_type = ? ORDER BY ocel_id LIMIT 1", (items_type,)
     ).fetchone()
     if row is None:
         return None
@@ -180,7 +180,7 @@ def inject_incorrect_attribute_datatype_string_in_weight(conn: sqlite3.Connectio
     product weight (REAL)."""
     table = get_om_object_table("object_products")
     row = conn.execute(
-        f"SELECT ocel_id FROM {table} WHERE weight IS NOT NULL LIMIT 1"
+        f"SELECT ocel_id FROM {table} WHERE weight IS NOT NULL ORDER BY ocel_id LIMIT 1"
     ).fetchone()
     if row is None:
         return None
@@ -190,18 +190,19 @@ def inject_incorrect_attribute_datatype_string_in_weight(conn: sqlite3.Connectio
 
 
 def inject_incorrect_attribute_datatype_blob_in_role(conn: sqlite3.Connection) -> dict | None:
-    """incorrect_attribute_datatype Hard: Put UTF-16-LE bytes into
-    employee role field (TEXT).
-    Example: employee gets UTF-16-LE encoded role."""
+    """incorrect_attribute_datatype Hard: Store an employee's role as
+    UTF-16-LE bytes (BLOB in a TEXT column). Hard because the decoded text
+    is the right role."""
     table = get_om_object_table("object_employees")
     row = conn.execute(
-        f"SELECT ocel_id FROM {table} WHERE role IS NOT NULL LIMIT 1"
+        f"SELECT ocel_id, role FROM {table} "
+        "WHERE role IS NOT NULL AND ocel_changed_field IS NULL ORDER BY ocel_id LIMIT 1"
     ).fetchone()
     if row is None:
         return None
-    ocel_id = row[0]
+    ocel_id, role = row
     old_value = _capture_and_update(
-        conn, table, "role", ocel_id, "manager".encode("utf-16-le")
+        conn, table, "role", ocel_id, str(role).encode("utf-16-le")
     )
     return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
 
@@ -215,7 +216,7 @@ def inject_duplicate_objects_on_ids_product(conn: sqlite3.Connection) -> str | N
     """duplicate_objects_on_ids Easy: Duplicate a product row in object."""
     products_type = get_om_object_type("products")
     row = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (products_type,)
+        "SELECT ocel_id FROM object WHERE ocel_type = ? ORDER BY ocel_id LIMIT 1", (products_type,)
     ).fetchone()
     if row is None:
         return None
@@ -229,7 +230,7 @@ def inject_duplicate_objects_on_ids_triple_conflicting_type(conn: sqlite3.Connec
     customers_type = get_om_object_type("customers")
     orders_type = get_om_object_type("orders")
     row = conn.execute(
-        "SELECT ocel_id FROM object WHERE ocel_type = ? LIMIT 1", (customers_type,)
+        "SELECT ocel_id FROM object WHERE ocel_type = ? ORDER BY ocel_id LIMIT 1", (customers_type,)
     ).fetchone()
     if row is None:
         return None
@@ -250,7 +251,7 @@ def inject_duplicate_objects_on_attributes_clone_product(conn: sqlite3.Connectio
     products_type = get_om_object_type("products")
     table = get_om_object_table("object_products")
     row = conn.execute(
-        f"SELECT ocel_id FROM {table} LIMIT 1"
+        f"SELECT ocel_id FROM {table} ORDER BY ocel_id LIMIT 1"
     ).fetchone()
     if row is None:
         return None
@@ -310,7 +311,7 @@ def inject_incorrect_object_attribute_value_negative_weight_easy(conn: sqlite3.C
     """incorrect_attribute_value Easy: Set a product's weight to -999 (obviously wrong)."""
     table = get_om_object_table("object_products")
     row = conn.execute(
-        f"SELECT ocel_id FROM {table} WHERE weight > 0 AND ocel_changed_field IS NULL LIMIT 1"
+        f"SELECT ocel_id FROM {table} WHERE weight > 0 AND ocel_changed_field IS NULL ORDER BY ocel_id LIMIT 1"
     ).fetchone()
     if row is None:
         return None
@@ -325,7 +326,7 @@ def inject_incorrect_object_attribute_value_implausible_price_hard(conn: sqlite3
     table = get_om_object_table("object_products")
     row = conn.execute(
         f"SELECT ocel_id, price FROM {table} "
-        "WHERE price > 0 AND ocel_changed_field IS NULL LIMIT 1 OFFSET 1"
+        "WHERE price > 0 AND ocel_changed_field IS NULL ORDER BY ocel_id LIMIT 1 OFFSET 1"
     ).fetchone()
     if row is None:
         return None

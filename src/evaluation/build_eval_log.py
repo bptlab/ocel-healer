@@ -13,6 +13,8 @@ the rest of the log and a repair can recover them:
     amount    REAL, event_PayOrder only — the initial price of the paid order.
 
 Deterministic: the same baseline always yields the same evaluation log.
+Because both attributes can be looked up again, `baselines.py` repairs them
+by lookup as a reference for the LLM's repairs.
 
 Usage:
     python -m src.evaluation.build_eval_log [--src PATH] [--dst PATH]

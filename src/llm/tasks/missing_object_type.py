@@ -30,31 +30,31 @@ class MissingObjectType(ResolutionTask):
     """
 
     METHOD = """
-        1. Read `violation.ocel_id` first — id keywords or human names are
-           often the single strongest signal (e.g. "Alessandro Berti" → a
-           person, `p-123456` → a package, `i-88001` → an item).
+        1. Read `violation.ocel_id` first — an id prefix or keyword shared with
+           the objects of one type, or a human name, is often the single
+           strongest signal (e.g. `b-20017` when the ids of `type B` start
+           with `b-`).
            If `examination_hints.all_object_types` is present, match the id
            against each type's `id_template` (digit runs shown as `#`): a
            matching template is strong evidence for that type.
         2. Read the qualifiers in `events`. The qualifier names the ROLE
-           the object plays, not the event's subject. Qualifiers like
-           `shipper`, `handler`, `picker` mean this object IS the
-           shipper/handler/picker (a person), not the package being handled.
-        3. Attribute names in `object.attributes` reinforce: `email` /
-           `country` → customer; `role` / `department` → employee;
-           `price` / `weight` → product or item.
+           the object plays, not the event's subject: an object referenced
+           under qualifier `q1` fills role `q1` in that event; it is not one
+           of the event's other objects.
+        3. Attribute names in `object.attributes` reinforce: prefer the type
+           whose objects declare the same attributes.
         4. If several types fit, prefer the one whose name best matches the
            id and qualifiers.
     """
 
     EXAMPLES = """
-        violation.ocel_id = 'Alessandro Berti'
-        events = [{activity: 'send package', qualifier: 'shipper'},
-                  {activity: 'deliver package', qualifier: 'shipper'}]
-        candidate_types = ['employees', 'customers', 'packages', 'items', 'orders']
-        → {"inferred_type": "employees",
-           "rationale": "'Alessandro Berti' is a human name; qualifier 'shipper' is the role this person plays — they ship packages, they are not a package",
-           "confidence": 0.95}
+        violation.ocel_id = 'b-20017'
+        events = [{activity: 'E2', qualifier: 'b'},
+                  {activity: 'E3', qualifier: 'b'}]
+        candidate_types = ['type A', 'type B', 'type C']
+        → {"inferred_type": "type B",
+           "rationale": "the id prefix 'b-' and the qualifier 'b' on both events point to type B",
+           "confidence": 0.9}
     """
 
     def parse_payload(self, row: dict, payload: dict) -> ActionResult:

@@ -30,7 +30,7 @@ BASE_PERSONA = textwrap.dedent(
       1. LOCAL_CONTEXT — values explicitly present in the provided context.
          Use these first; they are the most reliable signal.
       2. DOMAIN_KNOWLEDGE — stable real-world knowledge about well-known
-         entities (product weights, release years, standard categories).
+         entities named in the context.
          Use this only when local context is silent AND the missing value is
          a factual, entity-specific attribute.
       3. BEST GUESS — when both are weak, still return your best concrete
@@ -74,16 +74,16 @@ TYPE_EXPERT = textwrap.dedent(
     <family_focus>
       You are working on a TYPE-INFERENCE task. Classify one object into a
       closed set of OCEL object types. Three signals, in order:
-        1. The object's `ocel_id` — id keywords (`p-…`, `product-…`,
-           `customer-…`), or human names, are often the strongest single
+        1. The object's `ocel_id` — an id prefix or keyword shared with
+           the objects of one type (e.g. `a-…` for every object of
+           `type A`), or a human name, is often the strongest single
            signal. A contradicting id keyword is NOT weak just because
            events and attributes are sparse.
         2. Event qualifiers — the qualifier names the ROLE the object
-           plays in the event, not the event's subject. Qualifier
-           `shipper` on `send package` means this object IS the shipper
-           (a person), not the package.
-        3. Attribute shape — `email` / `country` → customer;
-           `role` / `department` → employee; `price` / `sku` → product.
+           plays in the event, not the event's subject. Qualifier `q1`
+           on event type `E1` means this object fills role `q1` in `E1`.
+        3. Attribute shape — the object's attributes match those of one
+           type (e.g. `attr_x` / `attr_y` are only declared by `type A`).
       Never invent a type outside `candidate_types`.
     </family_focus>
     """
@@ -99,12 +99,12 @@ ATTRIBUTE_EXPERT = textwrap.dedent(
           of values that appear in this column. Use them to constrain your
           answer's form.
         - The anchor's other attributes (`object.attributes`) often
-          correlate with the missing one (e.g. `country` implies
-          `currency`).
+          correlate with the missing one (e.g. `attr_x` determines
+          `attr_y` across the peers).
         - Event activities and qualifiers can name the value directly
-          (e.g. `pay_in_eur` → currency `EUR`).
-        - Match the peers' unit and precision. If peers use `kg`, do not
-          reply in `g`.
+          (e.g. an event type `E_v1` implies `attr_x = 'v1'`).
+        - Match the peers' unit and precision. If peers write `12.5`,
+          do not reply `12500`.
     </family_focus>
     """
 ).strip()
@@ -116,12 +116,13 @@ RELATION_EXPERT = textwrap.dedent(
       You are working on a RELATION-REPAIR task — a broken E2O or O2O
       reference. Your job is to pick one existing referent id from the
       candidate list.
-        - Read `violation.ocel_qualifier` first: it usually names a role
+        - Read `violation.ocel_qualifier` first: it often names a role
           that pins the expected `ocel_type` of the missing end
-          (e.g. qualifier `customer` selects `ocel_type='customer'`).
+          (e.g. qualifier `a` selects `ocel_type='type A'`).
         - Filter the candidate list to entries matching that type; among
-          survivors, prefer ids that share a naming prefix or convention
-          with the known end (e.g. `o-42` pairs with `c-42`).
+          survivors, prefer the id that differs from the dangling one by
+          a plausible typo, then ids that share a naming convention with
+          the known end (e.g. `x-42` pairs with `y-42`).
         - The returned id MUST be one of the candidate list entries
           verbatim. Never invent an id.
         - If no candidate plausibly matches, return null.
@@ -159,12 +160,10 @@ TEMPORAL_EXPERT = textwrap.dedent(
         - Match the timestamp format of neighbors VERBATIM. If neighbors
           use `'YYYY-MM-DD HH:MM:SS'`, do not switch to ISO-8601 with a
           `T` separator or timezone suffix.
-        - The typical order-management lifecycle is: `place order` →
-          `confirm order` → `pay order` → `pick item` → `create package`
-          → `send package` → `package delivered`. Rare events
-          (`item out of stock`, `reorder item`, `failed delivery`) can
-          appear off the happy path; do not force them into the mainline
-          ordering unless neighbors support it.
+        - Infer the usual sequence of event types from the neighbors'
+          timestamps (e.g. `E1` events precede `E2` events of the same
+          object). Rare event types can appear off the usual path; do not
+          force them into the main sequence unless neighbors support it.
         - Return null only when neighbors give no bracketing signal at
           all AND the anchor's activity gives no independent hint.
     </family_focus>

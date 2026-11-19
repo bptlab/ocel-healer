@@ -58,6 +58,7 @@ def _pick_event_with_relations(
             JOIN event_object eo2
                 ON eo2.ocel_object_id = eo.ocel_object_id
                AND eo2.ocel_event_id != e.ocel_id
+            ORDER BY e.ocel_id
             LIMIT 1
         """
     else:
@@ -67,6 +68,7 @@ def _pick_event_with_relations(
             WHERE EXISTS (
                 SELECT 1 FROM event_object eo WHERE eo.ocel_event_id = e.ocel_id
             )
+            ORDER BY e.ocel_id
             LIMIT 1
         """
     row = conn.execute(query).fetchone()
@@ -164,7 +166,7 @@ def inject_missing_event_bare_id_hard(conn: sqlite3.Connection) -> dict | None:
     row = conn.execute(
         "SELECT e.ocel_id, e.ocel_type FROM event e "
         "JOIN event_object eo ON eo.ocel_event_id = e.ocel_id "
-        "WHERE e.ocel_type = ? AND eo.ocel_qualifier = ? LIMIT 1",
+        "WHERE e.ocel_type = ? AND eo.ocel_qualifier = ? ORDER BY e.ocel_id LIMIT 1",
         (event_type, qualifier),
     ).fetchone()
     if row is None:
@@ -191,7 +193,7 @@ def inject_missing_event_type_null_confirm_easy(conn: sqlite3.Connection) -> str
     """
     event_type = get_om_event_type("confirm order")
     row = conn.execute(
-        "SELECT ocel_id FROM event WHERE ocel_type = ? LIMIT 1", (event_type,)
+        "SELECT ocel_id FROM event WHERE ocel_type = ? ORDER BY ocel_id LIMIT 1", (event_type,)
     ).fetchone()
     if row is None:
         return None
@@ -211,7 +213,7 @@ def inject_missing_event_type_whitespace_package_hard(conn: sqlite3.Connection) 
     """
     event_type = get_om_event_type("create package")
     row = conn.execute(
-        "SELECT ocel_id FROM event WHERE ocel_type = ? LIMIT 1", (event_type,)
+        "SELECT ocel_id FROM event WHERE ocel_type = ? ORDER BY ocel_id LIMIT 1", (event_type,)
     ).fetchone()
     if row is None:
         return None
@@ -336,17 +338,35 @@ def inject_incorrect_event_attribute_value_wrong_resource_hard(conn: sqlite3.Con
 # ---------------------------------------------------------------------------
 
 
+def _retype_event(conn: sqlite3.Connection, ocel_id: str, new_type: str) -> str:
+    """Give an event a wrong type the way a real log would hold it: change
+    `event.ocel_type` AND move its attribute row into the new type's table
+    (shared columns are copied; the rest are left NULL). Without the move,
+    the event would sit in its old type's table, a giveaway no real wrong
+    label has. Returns the old type."""
+    old_type = conn.execute("SELECT ocel_type FROM event WHERE ocel_id = ?", (ocel_id,)).fetchone()[0]
+    tables = dict(conn.execute("SELECT ocel_type, ocel_type_map FROM event_map_type"))
+    old_t, new_t = f"event_{tables[old_type]}", f"event_{tables[new_type]}"
+    old_cols = [r[1] for r in conn.execute(f'PRAGMA table_info("{old_t}")')]
+    shared = [c for c in (r[1] for r in conn.execute(f'PRAGMA table_info("{new_t}")')) if c in old_cols]
+    cols = ", ".join(f'"{c}"' for c in shared)
+    conn.execute(f'INSERT INTO "{new_t}" ({cols}) SELECT {cols} FROM "{old_t}" WHERE ocel_id = ?', (ocel_id,))
+    conn.execute(f'DELETE FROM "{old_t}" WHERE ocel_id = ?', (ocel_id,))
+    conn.execute("UPDATE event SET ocel_type = ? WHERE ocel_id = ?", (new_type, ocel_id))
+    return old_type
+
+
 def inject_incorrect_event_type_swap_easy(conn: sqlite3.Connection) -> dict | None:
     """incorrect_event_type Easy: Change a place order event to pick item (completely wrong)."""
     place_type = get_om_event_type("place order")
     pick_type = get_om_event_type("pick item")
     row = conn.execute(
-        "SELECT ocel_id FROM event WHERE ocel_type = ? LIMIT 1", (place_type,)
+        "SELECT ocel_id FROM event WHERE ocel_type = ? ORDER BY ocel_id LIMIT 1", (place_type,)
     ).fetchone()
     if row is None:
         return None
     ocel_id = row[0]
-    old_value = _capture_and_update(conn, "event", "ocel_type", ocel_id, pick_type)
+    old_value = _retype_event(conn, ocel_id, pick_type)
     return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
 
 
@@ -359,12 +379,12 @@ def inject_incorrect_event_type_swap_related_hard(conn: sqlite3.Connection) -> d
     confirm_type = get_om_event_type("confirm order")
     pay_type = get_om_event_type("pay order")
     row = conn.execute(
-        "SELECT ocel_id FROM event WHERE ocel_type = ? LIMIT 1", (confirm_type,)
+        "SELECT ocel_id FROM event WHERE ocel_type = ? ORDER BY ocel_id LIMIT 1", (confirm_type,)
     ).fetchone()
     if row is None:
         return None
     ocel_id = row[0]
-    old_value = _capture_and_update(conn, "event", "ocel_type", ocel_id, pay_type)
+    old_value = _retype_event(conn, ocel_id, pay_type)
     return {"affected_ids": [ocel_id], "original_values": {ocel_id: old_value}}
 
 
@@ -377,7 +397,7 @@ def inject_incorrect_event_time_future_easy(conn: sqlite3.Connection) -> dict | 
     """incorrect_event_time Easy: Set event time to year 2099."""
     table = get_om_event_table("event_PlaceOrder")
     row = conn.execute(
-        f"SELECT ocel_id FROM {table} LIMIT 1"
+        f"SELECT ocel_id FROM {table} ORDER BY ocel_id LIMIT 1"
     ).fetchone()
     if row is None:
         return None
@@ -392,7 +412,7 @@ def inject_incorrect_event_time_past_hard(conn: sqlite3.Connection) -> dict | No
     """incorrect_event_time Hard: Set event time to year 1900."""
     table = get_om_event_table("event_ConfirmOrder")
     row = conn.execute(
-        f"SELECT ocel_id FROM {table} LIMIT 1"
+        f"SELECT ocel_id FROM {table} ORDER BY ocel_id LIMIT 1"
     ).fetchone()
     if row is None:
         return None
@@ -412,7 +432,7 @@ def inject_duplicate_events_on_ids_easy(conn: sqlite3.Connection) -> str | None:
     """duplicate_events_on_ids Easy: Duplicate an event row identically."""
     event_type = get_om_event_type("place order")
     row = conn.execute(
-        "SELECT ocel_id, ocel_type FROM event WHERE ocel_type = ? LIMIT 1", (event_type,)
+        "SELECT ocel_id, ocel_type FROM event WHERE ocel_type = ? ORDER BY ocel_id LIMIT 1", (event_type,)
     ).fetchone()
     if row is None:
         return None
@@ -425,7 +445,7 @@ def inject_duplicate_events_on_ids_conflicting_types_hard(conn: sqlite3.Connecti
     place_type = get_om_event_type("place order")
     pick_type = get_om_event_type("pick item")
     row = conn.execute(
-        "SELECT ocel_id FROM event WHERE ocel_type = ? LIMIT 1 OFFSET 2", (place_type,)
+        "SELECT ocel_id FROM event WHERE ocel_type = ? ORDER BY ocel_id LIMIT 1 OFFSET 2", (place_type,)
     ).fetchone()
     if row is None:
         return None

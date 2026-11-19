@@ -261,8 +261,9 @@ class IssueTask(ABC):
         row: dict,
         *,
         target_col: str | None = None,
+        k: int = 5,
     ) -> None:
-        """Attach ``peer_objects``: up to 5 peers of the same type, full attribute rows.
+        """Attach ``peer_objects``: up to `k` peers of the same type, full attribute rows.
 
         Delegates to :func:`sampling.sample_peers` for deterministic +
         representative selection. When ``target_col`` is given, stratifies so
@@ -281,7 +282,7 @@ class IssueTask(ABC):
             row,
             anchor_id=anchor_id,
             anchor_type=anchor_type,
-            k=5,
+            k=k,
             target_col=target_col,
             kind=self.kind,
         )
@@ -308,28 +309,66 @@ class ResolutionTask(IssueTask):
 class DetectionTask(IssueTask):
     """LLM-as-detector.
 
-    The LLM judges *whether* a candidate is a real violation. Subclasses
-    implement `parse_detection` returning a `DetectionResult`; the base
-    class bridges that into `parse_payload` so the existing
-    suggest_repair / apply_repair plumbing keeps working at fix-time.
+    Detection and repair are separate LLM calls, as for every rule-detected
+    issue: the detection prompt (`DETECT_TASK` / `DETECT_METHOD` /
+    `DETECT_EXAMPLES`, answered with `ViolationVerdictOutput`) only judges
+    whether the candidate is wrong; the repair prompt (`TASK` / `METHOD` /
+    `EXAMPLES` with `OutputModel`) is asked for the corrected value of a
+    confirmed flag, and `parse_repair` reads it.
+
+    Tasks whose finding already says *where* the fix goes (the missing
+    attribute's name) set `SEPARATE_REPAIR = False`: their one prompt is
+    the detection, `parse_detection` reads it, and the repair applies the
+    finding (`action_for_flag`).
     """
 
-    @abstractmethod
-    def parse_detection(self, row: dict, payload: dict) -> DetectionResult:
-        """Translate the LLM JSON payload into a DetectionResult."""
+    SEPARATE_REPAIR: ClassVar[bool] = True
+    DETECT_TASK: ClassVar[str] = ""
+    DETECT_METHOD: ClassVar[str] = ""
+    DETECT_EXAMPLES: ClassVar[str] = ""
 
-    # Bridge: when something asks the detection task for an ActionResult
-    # (e.g. existing suggest_repair callers), reuse the LLM's verdict.
-    # `flagged=True` + a suggested_value -> update; otherwise -> decline.
+    @property
+    def detection_prompt(self) -> str:
+        if not self.SEPARATE_REPAIR:
+            return self.prompt
+        from src.llm.schemas import ViolationVerdictOutput
+
+        return render_task_prompt(
+            task=self.DETECT_TASK,
+            inputs=self.INPUTS,
+            method=self.DETECT_METHOD,
+            examples=self.DETECT_EXAMPLES,
+            output_model=ViolationVerdictOutput,
+        )
+
+    @property
+    def detection_output_model(self) -> type[BaseModel]:
+        from src.llm.schemas import ViolationVerdictOutput
+
+        return ViolationVerdictOutput if self.SEPARATE_REPAIR else self.OutputModel
+
+    def parse_detection(self, row: dict, payload: dict) -> DetectionResult:
+        """Translate the detection reply into a DetectionResult. Default:
+        the `ViolationVerdictOutput` verdict, with no corrected value."""
+        return DetectionResult(
+            flagged=bool(payload.get("is_violation")),
+            rationale=str(payload.get("rationale", "") or "").strip(),
+            confidence=float(payload.get("confidence", 0.0) or 0.0),
+        )
+
+    def parse_repair(self, row: dict, payload: dict) -> DetectionResult:
+        """Read the corrected value from a repair reply (SEPARATE_REPAIR tasks)."""
+        raise NotImplementedError
+
+    # The repair reply becomes an ActionResult: a corrected value updates
+    # the row, no value declines.
     def parse_payload(self, row: dict, payload: dict) -> "ActionResult":
         from src.llm.actions import ActionResult
 
-        verdict = self.parse_detection(row, payload)
+        verdict = (self.parse_repair if self.SEPARATE_REPAIR else self.parse_detection)(row, payload)
         if not verdict.flagged or verdict.suggested_value is None:
             reason = (verdict.rationale or "no reason provided").strip()
-            return ActionResult.decline(
-                f"LLM did not flag this row as a violation: {reason}"
-            )
+            return ActionResult.decline(f"LLM proposed no corrected value: {reason}")
         return self.action_for_flag(row, verdict)
 
     def action_for_flag(self, row: dict, verdict: DetectionResult) -> "ActionResult":

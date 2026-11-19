@@ -82,13 +82,13 @@ class DuplicateObjectsOnIds(ResolutionTask):
     """
 
     EXAMPLES = """
-        duplicate_rows = [{ocel_id: 'o-1', ocel_type: 'customer'},
-                          {ocel_id: 'o-1', ocel_type: null}]
-        events = [{activity: 'place_order', qualifier: 'customer'}]
-        → {"canonical_id": "o-1",
-           "ids_to_delete": ["o-1"],
-           "canonical_type": "customer",
-           "rationale": "kept the row with ocel_type='customer'; events qualify this id as a customer. Marked the NULL-type row for removal.",
+        duplicate_rows = [{ocel_id: 'x-1', ocel_type: 'type A', has_attribute_row: true},
+                          {ocel_id: 'x-1', ocel_type: null, has_attribute_row: false}]
+        events = [{activity: 'E1', qualifier: 'a'}]
+        → {"canonical_id": "x-1",
+           "ids_to_delete": ["x-1"],
+           "canonical_type": "type A",
+           "rationale": "kept the row with ocel_type='type A'; events qualify this id as 'a'. Marked the NULL-type row for removal.",
            "confidence": 0.9}
     """
 
@@ -99,6 +99,12 @@ class DuplicateObjectsOnIds(ResolutionTask):
         if not ids:
             return
         ctx["duplicate_rows"] = duplicate_rows_context(conn, ids, "object")
+
+    def rule_action(self, conn, row: dict) -> ActionResult | None:
+        """All duplicates share one type: keep one row, no LLM needed."""
+        types = {t.strip() for t in (row.get("ocel_types") or "").split(",")
+                 if t.strip() and t.strip().lower() != "none"}
+        return self.parse_payload(row, {}) if row.get("ocel_id") and len(types) == 1 else None
 
     def parse_payload(self, row: dict, payload: dict) -> ActionResult:
         ocel_id = row.get("ocel_id")

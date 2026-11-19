@@ -1,5 +1,6 @@
 from src.llm.actions import object_attribute_target
 from src.llm.schemas import ImplausibleValueOutput
+from src.llm.sampling import column_summary
 from src.llm.tasks._base import DetectionResult, DetectionTask
 
 
@@ -19,13 +20,48 @@ class IncorrectAttributeValue(DetectionTask):
     family = "attribute"
     OutputModel = ImplausibleValueOutput
 
+    DETECT_TASK = """
+        A row has an attribute value with the right SQL type and no NULL, but the
+        value itself may be semantically wrong for the attribute. Decide only
+        WHETHER it is wrong, given the attribute's name / meaning and the peer
+        distribution. Do not propose a corrected value: that is a separate step.
+    """
+
+    DETECT_METHOD = """
+        1. Read the attribute name (and the anchor's other attributes, if
+           given) to infer what the column records.
+        2. Compare `actual_value` against `peer_objects[*][attribute]` and
+           `peer_summary` (the column's full range). A value that matches the peers' shape (sign, magnitude, vocabulary, casing,
+           length) is plausible even when unusual.
+        3. `is_violation: true` when the value contradicts the attribute's
+           meaning — even if you can't tell the right value:
+             - a sign no peer has (a negative value where every peer is positive),
+             - a value outside a closed peer vocabulary,
+             - text with a clearly different convention (a machine id where
+               every peer has a human name),
+             - a date that cannot correspond to what the column records,
+             - a value orders of magnitude off from every peer.
+        4. `is_violation: false` when the value looks fine or merely unusual,
+           when peers are absent, or when the attribute's meaning is unclear.
+    """
+
+    DETECT_EXAMPLES = """
+        violation = {attribute: 'attr_x', actual_value: -3.5, expected_type: 'REAL'}
+        peer_objects = [{attr_x: 3.0}, {attr_x: 4.5}, {attr_x: 3.5}]
+        → {"is_violation": true,
+           "rationale": "every peer value of attr_x is positive; a negative value contradicts the attribute",
+           "confidence": 0.9}
+
+        violation = {attribute: 'attr_z', actual_value: 3, expected_type: 'INTEGER'}
+        peer_objects = [{attr_z: 1}, {attr_z: 5}, {attr_z: 2}]
+        → {"is_violation": false,
+           "rationale": "3 matches the peer distribution's shape",
+           "confidence": 0.95}
+    """
+
     TASK = """
-        An object row has an attribute value with the right SQL type and no
-        NULL, but the value itself may be semantically wrong for the attribute.
-        Decide whether the value is plausible given the attribute's name /
-        meaning and the peer distribution. Flag only when the evidence is
-        specific — a value that contradicts what the attribute records — and
-        return null when the value looks fine or is merely unusual.
+        This attribute value has been judged semantically wrong. Propose the
+        corrected value from the attribute's meaning and the peer distribution.
     """
 
     INPUTS = """
@@ -35,61 +71,51 @@ class IncorrectAttributeValue(DetectionTask):
         - violation.expected_type  the column's SQL affinity (already satisfied)
         - violation.actual_value   the value currently in the cell
         - object.attributes        the anchor's other attributes for context
-        - peer_objects             up to 5 same-type peers with their values
+        - peer_objects             up to 20 same-type peers with their values
                                    for this attribute — the reference cohort
+        - peer_summary             the column across ALL other elements of this
+                                   type: count, min, median, max for numbers;
+                                   the most common values for text
     """
 
     METHOD = """
-        1. Read the attribute name and the anchor's other attributes to
-           infer what the column records (a price, a country code, an age,
-           a status enum, etc.).
-        2. Compare `actual_value` against `peer_objects[*][attribute]`.
-           A value that matches the peer distribution's shape (sign,
-           magnitude, vocabulary) is plausible even when unusual.
-        3. Flag ONLY when the value contradicts the attribute's meaning:
-             - a magnitude with the wrong sign (negative price, negative age),
-             - a value outside a closed peer vocabulary (an out-of-vocab
-               country code / status / enum label),
-             - a date that cannot correspond to what the column records
-               (a birthdate in the future, an event timestamp before the
-               log's known window),
-             - a value orders of magnitude off from every peer.
-        4. Default to `suggested_value: null` whenever the peers are absent
-           or the attribute's semantics are unclear from the name alone.
-           False positives are costly — silence is preferred over a guess.
-        5. When flagging, propose the corrected value in `suggested_value`.
-           It must match the column's `expected_type` affinity and must
-           differ from `actual_value` (returning the current value is
-           equivalent to null).
+        1. Read the attribute name (and the anchor's other attributes, if
+           given) to infer what the column records.
+        2. Use `peer_objects[*][attribute]` and `peer_summary` for the value's
+           shape, unit, format and range; when the wrong value is an obvious distortion of a right one
+           (a flipped sign, a shifted magnitude), undo the distortion.
+        3. The value must match `expected_type`'s affinity and differ from
+           `actual_value`.
+        4. Return `suggested_value: null` only when nothing in the context
+           points to a value.
     """
 
     EXAMPLES = """
-        violation = {attribute: 'price', actual_value: -19.99, expected_type: 'REAL'}
-        peer_objects = [{price: 12.0}, {price: 8.5}, {price: 24.99}]
-        → {"suggested_value": 19.99,
-           "rationale": "prices in the peer cohort are positive; negative price contradicts the attribute's meaning",
-           "confidence": 0.9}
+        violation = {attribute: 'attr_x', actual_value: -3.5, expected_type: 'REAL'}
+        peer_objects = [{attr_x: 3.0}, {attr_x: 4.5}, {attr_x: 3.5}]
+        → {"suggested_value": 3.5,
+           "rationale": "the value is a sign-flipped 3.5, which matches the peers",
+           "confidence": 0.8}
 
-        violation = {attribute: 'country', actual_value: 'XZ', expected_type: 'TEXT'}
-        peer_objects = [{country: 'DE'}, {country: 'US'}, {country: 'DE'}, {country: 'FR'}]
+        violation = {attribute: 'attr_w', actual_value: 'K9', expected_type: 'TEXT'}
+        peer_objects = [{attr_w: 'A1'}, {attr_w: 'B2'}, {attr_w: 'C3'}]
         → {"suggested_value": null,
-           "rationale": "'XZ' is not in the peer vocabulary but the correct value is not inferable from context",
+           "rationale": "'K9' is outside the peer vocabulary but nothing points to the right value",
            "confidence": 0.3}
-
-        violation = {attribute: 'quantity', actual_value: 3, expected_type: 'INTEGER'}
-        peer_objects = [{quantity: 1}, {quantity: 5}, {quantity: 2}]
-        → {"suggested_value": null,
-           "rationale": "quantity 3 matches the peer distribution's shape",
-           "confidence": 0.95}
     """
 
     def extend_context(self, conn, ctx: dict, row: dict) -> None:
         # Peers stratified on the column being judged so the cohort actually
         # constrains the plausibility check.
         target = row.get("attribute_name") or row.get("attribute")
-        self._attach_peers(conn, ctx, row, target_col=target)
+        self._attach_peers(conn, ctx, row, target_col=target, k=20)
+        anchor_id, anchor_type = self.anchor(row)
+        summary = column_summary(conn, anchor_id=anchor_id, anchor_type=anchor_type,
+                                 column=target, kind=self.kind) if anchor_id and target else None
+        if summary:
+            ctx["peer_summary"] = summary
 
-    def parse_detection(self, row: dict, payload: dict) -> DetectionResult:
+    def parse_repair(self, row: dict, payload: dict) -> DetectionResult:
         rationale = str(payload.get("rationale", "") or "").strip()
         confidence = float(payload.get("confidence", 0.0) or 0.0)
         suggested = payload.get("suggested_value")

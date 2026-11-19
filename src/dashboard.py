@@ -1510,6 +1510,17 @@ def drill_llm_confirm_render(
                     f"<div style='margin-bottom:4px'>{_context_prefix}</div>"
                     if _context_prefix else ""
                 )
+                # Detection only judges the value; the fix is asked for
+                # separately once the flag is confirmed (missing attributes
+                # are the exception: their finding names the attribute).
+                _suggested_part = (
+                    f" &nbsp;→&nbsp; "
+                    f"<b>Suggested:</b> <span style='background:#e6ffec; color:#1a7f37; "
+                    f"padding:1px 6px; border-radius:3px;'>{_suggested_display}</span>"
+                    if _suggested_display is not None else
+                    " &nbsp;<i style='opacity:0.7'>flagged as wrong; confirm it, then use "
+                    "<b>Ask domain expert</b> for a fix</i>"
+                )
                 _header = mo.Html(
                     "<div style='font-family:system-ui; padding:6px 0;'>"
                     f"<div><b>{_id_label}:</b> <code>{_ocel_id}</code></div>"
@@ -1517,9 +1528,7 @@ def drill_llm_confirm_render(
                     f"<div style='margin:4px 0'>"
                     f"<b>Current:</b> <span style='background:#fde2e2; color:#b00020; "
                     f"padding:1px 6px; border-radius:3px;'>{_current}</span>"
-                    f" &nbsp;→&nbsp; "
-                    f"<b>Suggested:</b> <span style='background:#e6ffec; color:#1a7f37; "
-                    f"padding:1px 6px; border-radius:3px;'>{_suggested_display}</span>"
+                    f"{_suggested_part}"
                     f"</div>"
                     f"<div><b>Rationale:</b> {_v.rationale}</div>"
                     f"<div style='margin-top:4px'><b>Confidence:</b> {_v.confidence:.2f}"

@@ -2,6 +2,7 @@ from src.detection.error_detection import _OCEL_RESERVED, _column_info, _event_t
 from src.llm.actions import ActionResult
 from src.llm.schemas import InferredObjectOutput
 from src.llm.tasks._base import ResolutionTask
+from src.llm.tasks._event_context import event_type_order
 
 
 class MissingEvent(ResolutionTask):
@@ -56,60 +57,67 @@ class MissingEvent(ResolutionTask):
                                       touched, their types and qualifiers
         - type_attributes             per candidate type: its attribute
                                       columns
+        - event_type_order              the usual order of event types in
+                                        this log, learned from the data: list
+                                        of {event_type, position}, where
+                                        position 0 means first in an object's
+                                        lifecycle and 1 means last
     """
 
     METHOD = """
         1. Read `violation.ocel_event_id` first — many event ids embed the
-           activity keyword (e.g. `place_order:e-991000`, `pick_item:…`).
-           An id keyword pins the type with high confidence.
-        2. If the id is opaque (a bare id like `e-771000`), fall back to
-           the qualifier + the referring object's type. `packer` on a
-           `packages` object → `create package` or `send package`;
-           `shipper` on a `packages` object → `send package`; `order` on
-           an `orders` object → one of the order-lifecycle events.
-        3. Use `object_events` to pick between multiple plausible types:
-           if `place order` is already present for this object, the
-           missing event is unlikely to be another `place order`.
+           activity keyword (e.g. `E2:1001` or `e2_x-1001`). An id keyword
+           pins the type with high confidence.
+        2. If the id is opaque (a bare id like `ev-771`), fall back to the
+           qualifiers in `event_links` and the types of the objects they
+           reference: pick the event type whose events touch such objects
+           in such roles.
+        3. Use `object_events` to pick between plausible types: a type the
+           object already has once in its lifecycle is unlikely to be the
+           missing one, and `event_type_order` shows which types usually
+           fill the gap between the object's existing events.
         4. For `attributes.ocel_time`, bracket the missing event between
-           the timestamps of the object's other events (same object
-           lifecycle order as `missing_event_timestamp`). Match the
+           the timestamps of the object's other events, using
+           `event_type_order` for which come before and after it. Match the
            format verbatim.
-        5. Fill the chosen type's other columns from `event_links`: a
-           column that holds a person (e.g. `resource`) usually names the
-           employee linked in `event_links`.
+        5. Fill the chosen type's other columns only when the context gives
+           direct evidence for a value; otherwise leave the key out.
         6. Return `ocel_type: null` when the evidence is genuinely opaque
            (no id keyword, no qualifier hint, no lifecycle gap).
     """
 
     EXAMPLES = """
-        violation = {ocel_event_id: 'place_order:e-991000',
-                     ocel_object_id: 'o-990100', ocel_qualifier: 'order'}
-        related_object = {ocel_id: 'o-990100', ocel_type: 'orders'}
+        violation = {ocel_event_id: 'E1:1001',
+                     ocel_object_id: 'a-1001', ocel_qualifier: 'a'}
+        related_object = {ocel_id: 'a-1001', ocel_type: 'type A'}
         object_events = [
-          {ocel_type: 'confirm order', ocel_time: '2023-04-03 12:05:00'},
-          {ocel_type: 'pay order',     ocel_time: '2023-04-03 13:00:00'},
+          {ocel_type: 'E2', ocel_time: '2020-01-02 12:05:00'},
+          {ocel_type: 'E3', ocel_time: '2020-01-02 13:00:00'},
         ]
-        candidate_types = ['place order', 'pay order', 'confirm order', ...]
-        → {"ocel_type": "place order",
-           "attributes": {"ocel_time": "2023-04-03 12:00:00"},
-           "rationale": "id embeds 'place_order' and the object lacks a place order event; picked a timestamp before confirm order",
+        event_type_order = [{event_type: 'E1', position: 0.0},
+                            {event_type: 'E2', position: 0.3},
+                            {event_type: 'E3', position: 0.6}]
+        candidate_types = ['E1', 'E2', 'E3', ...]
+        → {"ocel_type": "E1",
+           "attributes": {"ocel_time": "2020-01-02 12:00:00"},
+           "rationale": "id embeds 'E1', the object has no E1 event yet, and E1 usually comes first; picked a time just before E2",
            "confidence": 0.9}
 
-        violation = {ocel_event_id: 'e-771000',
-                     ocel_object_id: 'p-660001', ocel_qualifier: 'packer'}
-        related_object = {ocel_id: 'p-660001', ocel_type: 'packages'}
+        violation = {ocel_event_id: 'ev-771',
+                     ocel_object_id: 'b-2001', ocel_qualifier: 'q1'}
+        related_object = {ocel_id: 'b-2001', ocel_type: 'type B'}
         object_events = [
-          {ocel_type: 'send package', ocel_time: '2023-04-04 09:00:00'}
+          {ocel_type: 'E5', ocel_time: '2020-01-03 09:00:00'}
         ]
-        candidate_types = ['create package', 'send package', ...]
-        event_links = [{ocel_object_id: 'Detlef Wetzeler',
-                        ocel_type: 'employees', qualifier: 'packer'}, ...]
-        type_attributes = {'create package': ['resource'], ...}
-        → {"ocel_type": "create package",
-           "attributes": {"ocel_time": "2023-04-04 08:00:00",
-                          "resource": "Detlef Wetzeler"},
-           "rationale": "qualifier 'packer' on a package + already has send package → the missing event is likely 'create package', which precedes send",
-           "confidence": 0.75}
+        event_type_order = [..., {event_type: 'E4', position: 0.4},
+                            {event_type: 'E5', position: 0.6}, ...]
+        candidate_types = ['E4', 'E5', ...]
+        event_links = [{ocel_object_id: 'c-31', ocel_type: 'type C', qualifier: 'q1'}]
+        type_attributes = {'E4': ['attr_x'], ...}
+        → {"ocel_type": "E4",
+           "attributes": {"ocel_time": "2020-01-03 08:00:00"},
+           "rationale": "opaque id; the type B object already has E5, and E4 usually precedes E5; no direct evidence for attr_x, so it is left out",
+           "confidence": 0.6}
     """
 
     # Key used to smuggle the event_type→table map from build_context (which
@@ -135,6 +143,7 @@ class MissingEvent(ResolutionTask):
         columns = {t: [c for c, _ in _column_info(conn, table)] for t, table in type_map.items()}
         row[self._COLUMNS_KEY] = columns
         ctx["type_attributes"] = columns
+        ctx["event_type_order"] = event_type_order(conn)
 
         # What the missing event touched, not just the reported row.
         links = conn.execute(

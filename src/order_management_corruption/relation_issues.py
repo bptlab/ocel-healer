@@ -56,7 +56,7 @@ def _retarget(conn: sqlite3.Connection, table: str, match: dict, changes: dict) 
     sets = ", ".join(f"{c} = ?" for c in changes)
     conn.execute(
         f"UPDATE {table} SET {sets} WHERE rowid = "
-        f"(SELECT rowid FROM {table} WHERE {where} LIMIT 1)",
+        f"(SELECT rowid FROM {table} WHERE {where} ORDER BY rowid LIMIT 1)",
         (*changes.values(), *match.values()),
     )
 
@@ -197,7 +197,7 @@ def inject_missing_object_order_easy(conn: sqlite3.Connection) -> dict | None:
         "SELECT o.ocel_id, o.ocel_type FROM object o "
         "JOIN event_object eo ON eo.ocel_object_id = o.ocel_id "
         "JOIN event e ON e.ocel_id = eo.ocel_event_id "
-        "WHERE e.ocel_type = ? AND eo.ocel_qualifier = ? LIMIT 1",
+        "WHERE e.ocel_type = ? AND eo.ocel_qualifier = ? ORDER BY o.ocel_id LIMIT 1",
         (place_type, order_qual),
     ).fetchone()
     if row is None:
@@ -265,12 +265,13 @@ def inject_duplicate_o2o_relations_comprises_easy(
     """duplicate_o2o_relations Easy: insert duplicate o2o triple."""
     qual = get_om_o2o_qualifier("comprises")
     row = conn.execute(
-        "SELECT ocel_source_id, ocel_target_id FROM object_object WHERE ocel_qualifier = ? LIMIT 1", (qual,)
+        "SELECT ocel_source_id, ocel_target_id FROM object_object WHERE ocel_qualifier = ? "
+        "ORDER BY ocel_source_id, ocel_target_id LIMIT 1", (qual,)
     ).fetchone()
     if row is None:
         # Fallback: create relationship between any two materials
-        src = conn.execute("SELECT ocel_id FROM object LIMIT 1").fetchone()
-        tgt = conn.execute("SELECT ocel_id FROM object LIMIT 1 OFFSET 1").fetchone()
+        src = conn.execute("SELECT ocel_id FROM object ORDER BY ocel_id LIMIT 1").fetchone()
+        tgt = conn.execute("SELECT ocel_id FROM object ORDER BY ocel_id LIMIT 1 OFFSET 1").fetchone()
         if src and tgt:
             return _insert_o2o_copies(conn, src[0], tgt[0], qual, extras=2)
         return ("fake", "fake", qual)
@@ -363,7 +364,8 @@ def inject_duplicate_e2o_relations_sales_person_hard(
     edge repeated, not two different reps on one order."""
     ev = conn.execute(
         "SELECT ocel_event_id, ocel_object_id "
-        "FROM event_object WHERE ocel_qualifier = 'sales person' LIMIT 1"
+        "FROM event_object WHERE ocel_qualifier = 'sales person' "
+        "ORDER BY ocel_event_id, ocel_object_id LIMIT 1"
     ).fetchone()
     if not ev:
         return "", "", ""
