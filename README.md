@@ -1,8 +1,8 @@
-# OCEL-Healer
+# OCEL Healer
 
 Detection and LLM-assisted repair of data-quality issues in object-centric event logs
 
-OCEL-Healer combines four steps:
+OCEL Healer combines four steps:
 
 1. **Rule-based detection** finds data-quality issues deterministically (missing values, duplicates, dangling relations, wrong attribute types, …). No LLM is needed for this.
 2. **Examination** profiles the log once (id patterns, value vocabularies, null rates, …) and lets the LLM turn the profile into a short guide. Both are used in the next two steps as hints specific to that log.
@@ -237,7 +237,7 @@ All logs are OCEL 2.0 SQLite files, stored with Git LFS. They are datasets publi
 
 **Changes to the published files.** `order-management-corrupted.sqlite` contains injected issues. The real-world logs other than `age-of-empires.sqlite` are not byte-identical to the published files: they were converted to OCEL 2.0 SQLite or exported from a different version, so object and event counts can differ from the numbers given by the authors.
 
-**Using your own log:** put any OCEL 2.0 SQLite file (`.sqlite`) anywhere under `data/` and it appears in the dashboard's *OCEL File* dropdown. Logs in other formats (JSON/XML) can be converted with [pm4py](https://processintelligence.solutions/pm4py) (`pm4py.read_ocel2(...)` followed by `pm4py.write_ocel2(..., "log.sqlite")`). pm4py is not a dependency of OCEL-Healer; install it separately with `pip install pm4py` (it is licensed under AGPL-3.0).
+**Using your own log:** put any OCEL 2.0 SQLite file (`.sqlite`) anywhere under `data/` and it appears in the dashboard's *OCEL File* dropdown. Logs in other formats (JSON/XML) can be converted with [pm4py](https://processintelligence.solutions/pm4py) (`pm4py.read_ocel2(...)` followed by `pm4py.write_ocel2(..., "log.sqlite")`). pm4py is not a dependency of OCEL Healer; install it separately with `pip install pm4py` (it is licensed under AGPL-3.0).
 
 ## Repository structure
 
