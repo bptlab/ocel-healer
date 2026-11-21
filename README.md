@@ -22,6 +22,7 @@ You can connect any model served by [Ollama](https://ollama.com), on this machin
 - [Repository structure](#repository-structure)
 - [Requirements](#requirements)
 - [Troubleshooting](#troubleshooting)
+- [License](#license)
 
 ## A short tour
 
@@ -29,11 +30,11 @@ The screenshots below follow one issue through the dashboard, on the bundled syn
 
 **1. Open a log.** The dashboard shows a few log statistics and the *Issue Overview*: the number of detected issues per category (missing or incorrect data) and per element of the log (events, objects, relations). Red numbers are issues the rule-based detectors found. A yellow **?** marks an LLM-based check that has not been run on this log yet.
 
-![The dashboard after opening the synthetic log: log and model pickers, log statistics, the Exploration section and the Issue Overview table with its legend](docs/images/01-overview.png)
+![The dashboard after opening the synthetic log: log and model pickers, log statistics, the Examination section and the Issue Overview table with its legend](docs/images/01-overview.png)
 
-**2. Explore the log once.** *Run exploration* profiles the log and asks the LLM to describe it. The report is saved next to the log and gives the LLM steps context such as the process, the object types and typical values.
+**2. Examine the log once.** *Run examination* profiles the log and asks the LLM to describe it. The report is saved next to the log and gives the LLM steps context such as the process, the object types and typical values.
 
-![The Exploration section with the report expanded: the LLM describes the log as an order fulfilment process and lists object types, events and qualifiers](docs/images/02-exploration.png)
+![The Examination section with the report expanded: the LLM describes the log as an order fulfilment process and lists object types, events and qualifiers](docs/images/02-exploration.png)
 
 **3. Drill into an issue and ask for a repair.** Clicking *Missing Data / Event Type* lists three events without a type. For the first one, *Ask domain expert* proposes the type `confirm order`. It explains why, based on the event id and the order the event is linked to, and gives its confidence.
 
@@ -181,7 +182,7 @@ With `level="all"` this regenerates `data/synthetic/order-management-corrupted.s
 
 Before the LLM steps run on a log, the examination step analyses it and produces knowledge that LLM detection and LLM repair receive as `examination_hints`. It consists of a deterministic profile (schemas, null rates, id templates, value vocabularies, qualifier anomalies) and an LLM-written interpretation guide.
 
-Run it from the dashboard (pick a log and a model, press **🔎 Run examination**) or from the command line:
+Run it from the dashboard (pick a log and a model, press *Run examination*) or from the command line:
 
 ```bash
 python -m src.examination data/synthetic/order-management-corrupted.sqlite --model qwen3:8b
@@ -215,14 +216,28 @@ Each run is archived in `data/evaluation/runs/<timestamp>-<model>/`. `summarize_
 
 ## Data
 
-All logs are OCEL 2.0 SQLite files, stored with Git LFS.
+All logs are OCEL 2.0 SQLite files, stored with Git LFS. They are datasets published by other authors and are **not** covered by the MIT license of the code. Each one keeps its own license; please cite the original authors when you use them.
 
-| Folder | Logs |
-| --- | --- |
-| `data/synthetic/` | `order-management-baseline.sqlite` (clean), `order-management-corrupted.sqlite` (with injected issues), `p2p.sqlite` |
-| `data/real-world/` | `age-of-empires`, `angular-github-commits`, `blockchain`, `enron-all-mails`, `period20-procedure-steps`, `reasoning-benchmark`, `wil-m-p-van-der-aalst` |
+| File in `data/` | Original dataset | Authors | License |
+| --- | --- | --- | --- |
+| `synthetic/order-management-baseline.sqlite` | Order Management Object-centric Event Log in OCEL 2.0 Standard, [doi:10.5281/zenodo.8337464](https://doi.org/10.5281/zenodo.8337464) | Knopp, van der Aalst (2023) | CC BY 4.0 |
+| `synthetic/order-management-corrupted.sqlite` | Derived from the log above, with injected issues (see [Corruption](#corruption-building-the-synthetic-test-log)) | | CC BY 4.0 |
+| `synthetic/p2p.sqlite` | Procure-To-Payment (P2P) Object-centric Event Log in OCEL 2.0 Standard, [doi:10.5281/zenodo.8412920](https://doi.org/10.5281/zenodo.8412920) | Park, Tacke genannt Unterberg (2023) | CC BY 4.0 |
+| `real-world/age-of-empires.sqlite` | Object-Centric Event Log for Age of Empires Game Interactions, [doi:10.5281/zenodo.13365584](https://doi.org/10.5281/zenodo.13365584) | Liss, Elbert, Flath, van der Aalst (2024) | CC BY 4.0 |
+| `real-world/angular-github-commits.sqlite` | Angular GitHub Commits Object-centric Event Log, [doi:10.5281/zenodo.8430332](https://doi.org/10.5281/zenodo.8430332) | Pegoraro (2023) | CC BY 4.0 |
+| `real-world/blockchain.sqlite` | Comprehensive Ethereum Execution Data for Object-Centric Process Mining of Decentralized Applications (DApps), [doi:10.5281/zenodo.21989580](https://doi.org/10.5281/zenodo.21989580) ¹ | Berti (2026) | CC BY 4.0 |
+| `real-world/enron-all-mails.sqlite` | Object-Centric Event Log (OCEL) of the Enron Email Dataset, [doi:10.5281/zenodo.21989732](https://doi.org/10.5281/zenodo.21989732) | Berti (2026) | CC BY 4.0 |
+| `real-world/period20-procedure-steps.sqlite` | Object-Centric and Traditional Event Data of the German Bundestag, [doi:10.5281/zenodo.16811928](https://doi.org/10.5281/zenodo.16811928) ² | Diers, Peeva, Rennert, van der Aalst (2025) | CC BY 4.0 |
+| `real-world/reasoning-benchmark.sqlite` | PMLRM-Bench: An Object-Centric Event Log of Large Reasoning Model Reasoning Steps for Process Mining Analysis, [doi:10.5281/zenodo.21977680](https://doi.org/10.5281/zenodo.21977680) | Berti (2026) | CC BY 4.0 |
+| `real-world/wil-m-p-van-der-aalst.sqlite` | Object-Centric Event Logs based on Publication Data, [doi:10.5281/zenodo.23257441](https://doi.org/10.5281/zenodo.23257441) | Küsters, Pitsch, Rennert, Peeva (2026) | none stated ³ |
 
-**Using your own log:** put any OCEL 2.0 SQLite file (`.sqlite`) anywhere under `data/` and it appears in the dashboard's *OCEL File* dropdown. Logs in other formats (JSON/XML) can be converted with [pm4py](https://processintelligence.solutions/pm4py) (`pm4py.read_ocel2(...)` followed by `pm4py.write_ocel2(..., "log.sqlite")`).
+¹ The version of 2026-08-18. A corrected and much larger version was published on 2026-11-20 ([doi:10.5281/zenodo.24388223](https://doi.org/10.5281/zenodo.24388223)); the earlier one misses a large part of the extracted blockchain operations.<br>
+² Source of the underlying data: Deutscher Bundestag/Bundesrat – DIP.<br>
+³ The authors do not state a license for this dataset. Contact them before reusing it outside this repository.
+
+**Changes to the published files.** `order-management-corrupted.sqlite` contains injected issues. The real-world logs other than `age-of-empires.sqlite` are not byte-identical to the published files: they were converted to OCEL 2.0 SQLite or exported from a different version, so object and event counts can differ from the numbers given by the authors.
+
+**Using your own log:** put any OCEL 2.0 SQLite file (`.sqlite`) anywhere under `data/` and it appears in the dashboard's *OCEL File* dropdown. Logs in other formats (JSON/XML) can be converted with [pm4py](https://processintelligence.solutions/pm4py) (`pm4py.read_ocel2(...)` followed by `pm4py.write_ocel2(..., "log.sqlite")`). pm4py is not a dependency of OCEL-Healer; install it separately with `pip install pm4py` (it is licensed under AGPL-3.0).
 
 ## Repository structure
 
@@ -261,3 +276,7 @@ tests/                         pytest tests
 | Repair or examination times out | Use a smaller or non-reasoning model, or a faster machine via `OLLAMA_HOST`. |
 | A bundled log was changed by *Apply* | `git checkout -- data/<path>.sqlite` |
 | `ModuleNotFoundError: No module named 'src'` | Run commands from the repository root with the virtual environment active. |
+
+## License
+
+The code is released under the [MIT License](LICENSE). The event logs in `data/` are datasets by other authors under their own licenses; see [Data](#data).
