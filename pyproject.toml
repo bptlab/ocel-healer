@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ocel-healer"
 version = "1.5.0"
-description = "Rule-based detection and repair of data-quality issues in OCEL2 logs."
+description = "Detection and LLM-assisted repair of data-quality issues in object-centric event logs (OCEL 2.0)."
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
