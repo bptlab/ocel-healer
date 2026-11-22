@@ -1,4 +1,4 @@
-"""Pure rendering helpers for the OCEL-Healer dashboard.
+"""Pure rendering helpers for the OCEL Healer dashboard.
 
 Extracted from `dashboard.py` so the notebook file can stay focused on cells
 and reactivity. Nothing here touches `marimo.state` — `mo` is passed in from
