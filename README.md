@@ -18,6 +18,7 @@ You can connect any model served by [Ollama](https://ollama.com), on this machin
 - [Quick start: the dashboard](#quick-start-the-dashboard)
 - [Setting up the LLM (Ollama)](#setting-up-the-llm-ollama)
 - [Pipeline components](#pipeline-components)
+- [Evaluation](#evaluation)
 - [Data](#data)
 - [Repository structure](#repository-structure)
 - [Requirements](#requirements)
@@ -29,11 +30,11 @@ The screenshots below follow one issue through the dashboard, on the bundled syn
 
 **1. Open a log.** The dashboard shows a few log statistics and the *Issue Overview*: the number of detected issues per category (missing or incorrect data) and per element of the log (events, objects, relations). Red numbers are issues the rule-based detectors found. A yellow **?** marks an LLM-based check that has not been run on this log yet.
 
-![The dashboard after opening the synthetic log: log and model pickers, log statistics, the Exploration section and the Issue Overview table with its legend](docs/images/01-overview.png)
+![The dashboard after opening the synthetic log: log and model pickers, log statistics, the Examination section and the Issue Overview table with its legend](docs/images/01-overview.png)
 
-**2. Explore the log once.** *Run exploration* profiles the log and asks the LLM to describe it. The report is saved next to the log and gives the LLM steps context such as the process, the object types and typical values.
+**2. Examine the log once.** *🔎 Run examination* profiles the log and asks the LLM to describe it. The report is saved next to the log and gives the LLM steps context such as the process, the object types and typical values.
 
-![The Exploration section with the report expanded: the LLM describes the log as an order fulfilment process and lists object types, events and qualifiers](docs/images/02-exploration.png)
+![The Examination section with the report expanded: the LLM describes the log as an order fulfilment process and lists object types, events and qualifiers](docs/images/02-exploration.png)
 
 **3. Drill into an issue and ask for a repair.** Clicking *Missing Data / Event Type* lists three events without a type. For the first one, *Ask domain expert* proposes the type `confirm order`. It explains why, based on the event id and the order the event is linked to, and gives its confidence.
 
@@ -195,41 +196,34 @@ The artifacts are written **next to the log**, in `<log folder>/examination/<log
 
 The dashboard, the CLI and the LLM detection and repair steps all use this location, so a report created by any of them is picked up by the others. Repair also works without a report, just without log-specific hints. If the log's structure changes (tables, types, qualifiers), the report is marked stale and should be regenerated.
 
-### Synthetic evaluation (inject → detect → resolve)
+## Evaluation
+
+### Synthetic evaluation
 
 ```bash
 python -m src.evaluation.evaluate_synthetic --model qwen3:8b            # 50 scenarios × 10 runs
 python -m src.evaluation.evaluate_synthetic --model qwen3:8b --runs 1 --only missing_event,o2o_self_loop
-python -m src.evaluation.evaluate_synthetic --model none --baseline lookup   # no LLM, see below
 ```
 
 Tests every issue type of the dashboard overview on its own. Each scenario (one per issue type and difficulty, easy/hard; see `src/evaluation/scenarios.py`) copies a clean log, injects exactly that one issue into one fixed record, detects it, and resolves it the way the dashboard does. Rule cells count as detected when the detector reports rows on top of the clean log. LLM cells show the LLM the injected candidate mixed with 20 clean candidates of the same type, drawn afresh for every run, so false alarms are measured too; the report also extrapolates them to a full sweep of the type. Detection and repair are always separate steps: an LLM flag only says that a row is wrong, and the fix is asked for in its own call, as for a rule-detected row (a missing attribute's flag is the exception, since naming the attribute is the finding). LLM replies that don't parse are counted as *invalid*, and runs whose LLM call failed as *errors*; both are left out of the rates.
 
-A repair is scored **strict** when the repaired log equals the clean log (numbers within 10 %, timestamps within 10 h). For every repaired run the size of the error is kept as well (largest timestamp error in minutes, largest relative numeric error, wrong cells, rows missing or extra), so other cutoffs can be applied later. For the missing-attribute scenarios the LLM proposes attribute names: recall is whether the dropped name is among them, precision is correct names over all names proposed. Every repair records who decided it (a rule, the LLM, or the LLM's detection), and the report shows rule repairs and LLM repairs in separate tables.
+A repair is scored correct when the repaired log equals the clean log (numbers within 10 %, timestamps within 10 h). For every repaired run the size of the error is kept as well (largest timestamp error in minutes, largest relative numeric error, wrong cells, rows missing or extra), so other cutoffs can be applied later. For the missing-attribute scenarios the LLM proposes attribute names: recall is whether the dropped name is among them, precision is correct names over all names proposed. Every repair records who decided it (a rule, the LLM, or the LLM's detection), and the report shows rule repairs and LLM repairs in separate tables.
 
-The runs repeat the same corrupted record and vary only in the LLM's answers (sampled with a per-run seed) and the distractors, so the 95 % intervals describe how stable the answers are, not how the method generalises over records. Examination hints are not used.
+The runs repeat the same corrupted record and vary only in the LLM's answers (sampled with a per-run seed) and the distractors, so the 95 % intervals describe how stable the answers are, not how the method generalises over records. Each LLM call has a 120 s timeout (`--llm-timeout`), longer than the dashboard's 60 s.
 
-The evaluation is built from `data/synthetic/order-management-baseline.sqlite` at the start of every run (`src/evaluation/build_eval_log.py`): the order-management log plus two event attributes derived from data already in it (`resource`, the employee linked to the event; `amount` on pay order, the order's price), because the baseline has none and the event-attribute issues need them. Since both can be looked up, `--baseline lookup` repairs these cells by lookup instead of the LLM, as a reference for the LLM's results.
+The evaluation is built from `data/synthetic/order-management-baseline.sqlite` at the start of every run (`src/evaluation/build_eval_log.py`): the order-management log plus two event attributes derived from data already in it (`resource`, the employee linked to the event; `amount` on pay order, the order's price), because the baseline has none and the event-attribute issues need them.
 
-Each run is archived in `data/evaluation/synthetic/<timestamp>-<model>/`: `runs.csv` (one row per run), `verdicts.jsonl` (every LLM detection verdict), `actions.jsonl` (every suggested repair), `report.md`, `table.tex`, `scenarios.md` and `meta.json` (commit, model digest, Ollama version, temperature, seed, eval-log hash, …). Results for a paper should come from a clean commit; `--allow-dirty` is for trial runs.
+### Results
 
-### Evaluating the examination hints
+[`evaluation_results/synthetic/`](evaluation_results/synthetic/) contains one run archive per model: `report.md` (the results), `runs.csv` (one row per run, the data behind the report) and `meta.json` (date, settings and software versions of the run). The injected issues are described in `src/evaluation/scenarios.py`. All three use seed 0, 50 scenarios × 10 runs, 20 distractors, temperature 0.5 and a 10 h time tolerance:
 
-```bash
-python -m src.evaluation.evaluate_hints --model qwen3:8b
-python -m src.evaluation.summarize_runs
-```
+| Model | Report |
+| --- | --- |
+| `qwen2.5:7b` | [`qwen2.5-7b/report.md`](evaluation_results/synthetic/qwen2.5-7b/report.md) |
+| `ministral-3:14b` | [`ministral-3-14b/report.md`](evaluation_results/synthetic/ministral-3-14b/report.md) |
+| `phi4:14b` | [`phi4-14b/report.md`](evaluation_results/synthetic/phi4-14b/report.md) |
 
-`evaluate_hints` measures whether the hints improve repair accuracy. It copies the clean log, injects missing attribute values with known ground truth (currently the `missing_attribute_value` issue type), runs examination, and repairs every detected violation twice: with and without hints. Both arms are scored against the ground truth (coverage, exact match, within 10 % for numbers, mean relative error, mean confidence).
-
-Each run is archived in `data/evaluation/runs/<timestamp>-<model>/`. `summarize_runs` aggregates all runs into `data/evaluation/summary.md`.
-
-### Pre-computed results
-
-[`evaluation_results/`](evaluation_results/) contains the results of our evaluation runs:
-
-- `synthetic_report.md`, `synthetic_results.csv`, `synthetic_run_outputs.json`: detection and repair on the synthetic log
-- `real_world_report.md`, `real_world_results.csv`: rule-based detection on the real-world logs
+With `ministral-3:14b`, one run of `incorrect_object_type/easy` failed with a reproducible model error and is left out, so that cell has 9 runs. The evaluation on the real-world logs is pending and will be added to `evaluation_results/real_world/`.
 
 ## Data
 
@@ -250,7 +244,7 @@ src/
   examination/                 examination: profiling + LLM guide → hints
   llm/                         LLM client, per-issue repair tasks, repair application
   order_management_corruption/ issue injectors used to build the synthetic log
-  evaluation/                  hint evaluation (evaluate_hints, summarize_runs)
+  evaluation/                  synthetic evaluation (evaluate_synthetic)
   dashboard.py                 marimo dashboard
   dashboard_render.py          dashboard rendering helpers
   intro.ipynb                  walkthrough: corruption + detection

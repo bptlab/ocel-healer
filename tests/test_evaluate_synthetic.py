@@ -77,7 +77,6 @@ def test_llm_scenario(eval_log, tmp_path, monkeypatch):
     assert rec["error"] == ""
     assert rec["detected"] and rec["strict"]
     assert (rec["false_positives"], rec["distractors"], rec["invalid_outputs"]) == (0, 5, 0)
-    assert len((tmp_path / "verdicts.jsonl").read_text().splitlines()) == 6
 
 
 def test_llm_scenario_no_repair_no_credit(eval_log, tmp_path, monkeypatch):

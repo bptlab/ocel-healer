@@ -1,0 +1,501 @@
+issue_key,cell,difficulty,detection,run,detected,issue_rows,false_positives,distractors,invalid_outputs,sweep_size,names_proposed,names_correct,collateral,repairs_attempted,repairs_applied,repair_sources,action_kinds,noop_reasons,new_violations,timeouts,strict,time_error_min,num_rel_error,cells_wrong,rows_missing,rows_extra,error,seconds
+missing_event,Missing / Event,easy,rule,0,True,8,,,,,,,dangling_e2o_relationship+8,2,2,llm;llm,insert;followup:update,,,0,True,36.916666666666664,,0,0,0,,43.0
+missing_event,Missing / Event,easy,rule,1,True,8,,,,,,,dangling_e2o_relationship+8,2,2,llm;llm,insert;followup:update,,,0,True,36.916666666666664,,0,0,0,,15.3
+missing_event,Missing / Event,easy,rule,2,True,8,,,,,,,dangling_e2o_relationship+8,2,2,llm;llm,insert;followup:update,,,0,True,96.91666666666667,,0,0,0,,13.6
+missing_event,Missing / Event,easy,rule,3,True,8,,,,,,,dangling_e2o_relationship+8,2,2,llm;llm,insert;followup:update,,,0,True,96.91666666666667,,0,0,0,,14.2
+missing_event,Missing / Event,easy,rule,4,True,8,,,,,,,dangling_e2o_relationship+8,2,2,llm;llm,insert;followup:update,,,0,False,996.9166666666666,,0,0,0,,14.1
+missing_event,Missing / Event,easy,rule,5,True,8,,,,,,,dangling_e2o_relationship+8,2,2,llm;llm,insert;followup:update,,,0,False,3876.9166666666665,,0,0,0,,12.9
+missing_event,Missing / Event,easy,rule,6,True,8,,,,,,,dangling_e2o_relationship+8,2,2,llm;llm,insert;followup:update,,,0,True,36.916666666666664,,0,0,0,,14.9
+missing_event,Missing / Event,easy,rule,7,True,8,,,,,,,dangling_e2o_relationship+8,2,2,llm;llm,insert;followup:update,,,0,True,36.916666666666664,,0,0,0,,14.9
+missing_event,Missing / Event,easy,rule,8,True,8,,,,,,,dangling_e2o_relationship+8,2,2,llm;llm,insert;followup:update,,,0,True,276.9166666666667,,0,0,0,,13.7
+missing_event,Missing / Event,easy,rule,9,True,8,,,,,,,dangling_e2o_relationship+8,2,2,llm;llm,insert;followup:update,,,0,True,396.9166666666667,,0,0,0,,15.7
+missing_event,Missing / Event,hard,rule,0,True,28,,,,,,,dangling_e2o_relationship+28,2,2,llm;llm,insert;followup:update,,,0,False,3420.0,,1,0,0,,21.9
+missing_event,Missing / Event,hard,rule,1,True,28,,,,,,,dangling_e2o_relationship+28,2,2,llm;llm,insert;followup:update,,,0,False,3360.0,,1,0,0,,13.7
+missing_event,Missing / Event,hard,rule,2,True,28,,,,,,,dangling_e2o_relationship+28,2,2,llm;llm,insert;followup:update,,,0,False,3360.0,,1,0,0,,14.2
+missing_event,Missing / Event,hard,rule,3,True,28,,,,,,,dangling_e2o_relationship+28,2,2,llm;llm,insert;followup:update,,,0,False,3360.0,,1,0,0,,14.5
+missing_event,Missing / Event,hard,rule,4,True,28,,,,,,,dangling_e2o_relationship+28,2,2,llm;llm,insert;followup:update,,,0,False,3420.0,,1,0,0,,14.3
+missing_event,Missing / Event,hard,rule,5,True,28,,,,,,,dangling_e2o_relationship+28,2,2,llm;llm,insert;followup:update,,,0,False,3360.0,,1,0,0,,14.0
+missing_event,Missing / Event,hard,rule,6,True,28,,,,,,,dangling_e2o_relationship+28,2,2,llm;llm,insert;followup:update,,,0,False,3360.0,,1,0,0,,14.8
+missing_event,Missing / Event,hard,rule,7,True,28,,,,,,,dangling_e2o_relationship+28,2,2,llm;llm,insert;followup:update,,,0,False,3360.0,,1,0,0,,13.8
+missing_event,Missing / Event,hard,rule,8,True,28,,,,,,,dangling_e2o_relationship+28,2,2,llm;llm,insert;followup:update,,,0,False,3360.0,,1,0,0,,15.1
+missing_event,Missing / Event,hard,rule,9,True,28,,,,,,,dangling_e2o_relationship+28,2,2,llm;llm,insert;followup:update,,,0,False,3420.0,,1,0,0,,13.7
+missing_event_type,Missing / Event Type,easy,rule,0,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,17.3
+missing_event_type,Missing / Event Type,easy,rule,1,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,10.9
+missing_event_type,Missing / Event Type,easy,rule,2,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,7.9
+missing_event_type,Missing / Event Type,easy,rule,3,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,8.4
+missing_event_type,Missing / Event Type,easy,rule,4,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,8.8
+missing_event_type,Missing / Event Type,easy,rule,5,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,8.9
+missing_event_type,Missing / Event Type,easy,rule,6,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,8.8
+missing_event_type,Missing / Event Type,easy,rule,7,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,8.3
+missing_event_type,Missing / Event Type,easy,rule,8,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,8.3
+missing_event_type,Missing / Event Type,easy,rule,9,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,8.2
+missing_event_type,Missing / Event Type,hard,rule,0,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,13.0
+missing_event_type,Missing / Event Type,hard,rule,1,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,8.2
+missing_event_type,Missing / Event Type,hard,rule,2,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,7.8
+missing_event_type,Missing / Event Type,hard,rule,3,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,8.4
+missing_event_type,Missing / Event Type,hard,rule,4,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,8.6
+missing_event_type,Missing / Event Type,hard,rule,5,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,8.6
+missing_event_type,Missing / Event Type,hard,rule,6,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,9.0
+missing_event_type,Missing / Event Type,hard,rule,7,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,8.2
+missing_event_type,Missing / Event Type,hard,rule,8,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,8.0
+missing_event_type,Missing / Event Type,hard,rule,9,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,8.5
+missing_event_timestamp,Missing / Event Time,easy,rule,0,True,1,,,,,,,,1,1,llm,update,,,0,False,711.7,,0,0,0,,29.3
+missing_event_timestamp,Missing / Event Time,easy,rule,1,True,1,,,,,,,,1,1,llm,update,,,0,False,711.7,,0,0,0,,12.9
+missing_event_timestamp,Missing / Event Time,easy,rule,2,True,1,,,,,,,,1,1,llm,update,,,0,False,711.7,,0,0,0,,12.2
+missing_event_timestamp,Missing / Event Time,easy,rule,3,True,1,,,,,,,,1,1,llm,update,,,0,False,1251.7,,0,0,0,,12.5
+missing_event_timestamp,Missing / Event Time,easy,rule,4,True,1,,,,,,,,1,1,llm,update,,,0,False,1251.7,,0,0,0,,11.4
+missing_event_timestamp,Missing / Event Time,easy,rule,5,True,1,,,,,,,,1,1,llm,update,,,0,False,711.7,,0,0,0,,12.0
+missing_event_timestamp,Missing / Event Time,easy,rule,6,True,1,,,,,,,,1,1,llm,update,,,0,False,711.7,,0,0,0,,11.7
+missing_event_timestamp,Missing / Event Time,easy,rule,7,True,1,,,,,,,,1,1,llm,update,,,0,False,711.7,,0,0,0,,12.6
+missing_event_timestamp,Missing / Event Time,easy,rule,8,True,1,,,,,,,,1,1,llm,update,,,0,False,711.7,,0,0,0,,12.3
+missing_event_timestamp,Missing / Event Time,easy,rule,9,True,1,,,,,,,,1,1,llm,update,,,0,False,711.7,,0,0,0,,11.8
+missing_event_timestamp,Missing / Event Time,hard,rule,0,True,1,,,,,,,,1,1,llm,update,,,0,False,1539.9,,0,0,0,,17.1
+missing_event_timestamp,Missing / Event Time,hard,rule,1,True,1,,,,,,,,1,1,llm,update,,,0,False,1542.5666666666666,,0,0,0,,9.4
+missing_event_timestamp,Missing / Event Time,hard,rule,2,True,1,,,,,,,,1,1,llm,update,,,0,False,1539.9,,0,0,0,,9.3
+missing_event_timestamp,Missing / Event Time,hard,rule,3,True,1,,,,,,,,1,1,llm,update,,,0,False,1539.9,,0,0,0,,9.4
+missing_event_timestamp,Missing / Event Time,hard,rule,4,True,1,,,,,,,,1,1,llm,update,,,0,False,1569.6166666666666,,0,0,0,,9.3
+missing_event_timestamp,Missing / Event Time,hard,rule,5,True,1,,,,,,,,1,1,llm,update,,,0,False,1569.6166666666666,,0,0,0,,9.3
+missing_event_timestamp,Missing / Event Time,hard,rule,6,True,1,,,,,,,,1,1,llm,update,,,0,False,1542.5666666666666,,0,0,0,,10.3
+missing_event_timestamp,Missing / Event Time,hard,rule,7,True,1,,,,,,,,1,1,llm,update,,,0,False,1539.9,,0,0,0,,9.8
+missing_event_timestamp,Missing / Event Time,hard,rule,8,True,1,,,,,,,,1,1,llm,update,,,0,False,1539.9,,0,0,0,,9.7
+missing_event_timestamp,Missing / Event Time,hard,rule,9,True,1,,,,,,,,1,1,llm,update,,,0,False,1569.6166666666666,,0,0,0,,9.5
+missing_event_attribute,Missing / Event Attribute,easy,llm,0,False,1,0,10,0,10,0,0,,0,0,,,,,0,False,,,,,,,51.1
+missing_event_attribute,Missing / Event Attribute,easy,llm,1,False,1,0,10,0,10,0,0,,0,0,,,,,0,False,,,,,,,46.2
+missing_event_attribute,Missing / Event Attribute,easy,llm,2,False,1,0,10,0,10,0,0,,0,0,,,,,0,False,,,,,,,45.9
+missing_event_attribute,Missing / Event Attribute,easy,llm,3,False,1,0,10,0,10,0,0,,0,0,,,,,0,False,,,,,,,44.9
+missing_event_attribute,Missing / Event Attribute,easy,llm,4,False,1,0,10,0,10,0,0,,0,0,,,,,0,False,,,,,,,52.2
+missing_event_attribute,Missing / Event Attribute,easy,llm,5,False,1,0,10,0,10,0,0,,0,0,,,,,0,False,,,,,,,41.5
+missing_event_attribute,Missing / Event Attribute,easy,llm,6,False,1,0,10,0,10,0,0,,0,0,,,,,0,False,,,,,,,40.0
+missing_event_attribute,Missing / Event Attribute,easy,llm,7,False,1,0,10,0,10,0,0,,0,0,,,,,0,False,,,,,,,42.0
+missing_event_attribute,Missing / Event Attribute,easy,llm,8,False,1,0,10,0,10,0,0,,0,0,,,,,0,False,,,,,,,40.5
+missing_event_attribute,Missing / Event Attribute,easy,llm,9,False,1,0,10,0,10,0,0,,0,0,,,,,0,False,,,,,,,42.7
+missing_event_attribute,Missing / Event Attribute,hard,llm,0,True,1,3,10,0,10,4,1,,1,1,detection,alter_add_column,,,0,True,,,,,,,64.0
+missing_event_attribute,Missing / Event Attribute,hard,llm,1,True,1,0,10,0,10,1,1,,1,1,detection,alter_add_column,,,0,True,,,,,,,60.2
+missing_event_attribute,Missing / Event Attribute,hard,llm,2,True,1,4,10,0,10,5,1,,1,1,detection,alter_add_column,,,0,True,,,,,,,63.6
+missing_event_attribute,Missing / Event Attribute,hard,llm,3,True,1,2,10,0,10,3,1,,1,1,detection,alter_add_column,,,0,True,,,,,,,59.9
+missing_event_attribute,Missing / Event Attribute,hard,llm,4,True,1,7,10,0,10,8,1,,1,1,detection,alter_add_column,,,0,True,,,,,,,60.0
+missing_event_attribute,Missing / Event Attribute,hard,llm,5,True,1,0,10,0,10,1,1,,1,1,detection,alter_add_column,,,0,True,,,,,,,62.4
+missing_event_attribute,Missing / Event Attribute,hard,llm,6,True,1,4,10,0,10,5,1,,1,1,detection,alter_add_column,,,0,True,,,,,,,61.5
+missing_event_attribute,Missing / Event Attribute,hard,llm,7,True,1,0,10,0,10,1,1,,1,1,detection,alter_add_column,,,0,True,,,,,,,66.8
+missing_event_attribute,Missing / Event Attribute,hard,llm,8,True,1,6,10,0,10,7,1,,1,1,detection,alter_add_column,,,0,True,,,,,,,62.7
+missing_event_attribute,Missing / Event Attribute,hard,llm,9,True,1,4,10,0,10,5,1,,1,1,detection,alter_add_column,,,0,True,,,,,,,64.9
+missing_event_attribute_value,Missing / Event Attribute Value,easy,rule,0,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,10.4
+missing_event_attribute_value,Missing / Event Attribute Value,easy,rule,1,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,5.3
+missing_event_attribute_value,Missing / Event Attribute Value,easy,rule,2,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,6.5
+missing_event_attribute_value,Missing / Event Attribute Value,easy,rule,3,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,5.7
+missing_event_attribute_value,Missing / Event Attribute Value,easy,rule,4,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,6.8
+missing_event_attribute_value,Missing / Event Attribute Value,easy,rule,5,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,6.9
+missing_event_attribute_value,Missing / Event Attribute Value,easy,rule,6,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,6.8
+missing_event_attribute_value,Missing / Event Attribute Value,easy,rule,7,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,6.0
+missing_event_attribute_value,Missing / Event Attribute Value,easy,rule,8,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,5.8
+missing_event_attribute_value,Missing / Event Attribute Value,easy,rule,9,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,6.8
+missing_event_attribute_value,Missing / Event Attribute Value,hard,rule,0,True,1,,,,,,,,1,1,llm,update,,,0,False,,1.0254730498234832,0,0,0,,9.0
+missing_event_attribute_value,Missing / Event Attribute Value,hard,rule,1,True,1,,,,,,,,1,1,llm,update,,,0,False,,1.0254730498234832,0,0,0,,6.6
+missing_event_attribute_value,Missing / Event Attribute Value,hard,rule,2,True,1,,,,,,,,1,1,llm,update,,,0,False,,1.0254730498234832,0,0,0,,6.5
+missing_event_attribute_value,Missing / Event Attribute Value,hard,rule,3,True,1,,,,,,,,1,1,llm,update,,,0,False,,1.0254730498234832,0,0,0,,7.6
+missing_event_attribute_value,Missing / Event Attribute Value,hard,rule,4,True,1,,,,,,,,1,1,llm,update,,,0,False,,1.0254730498234832,0,0,0,,6.8
+missing_event_attribute_value,Missing / Event Attribute Value,hard,rule,5,True,1,,,,,,,,1,1,llm,update,,,0,False,,1.0254730498234832,0,0,0,,6.1
+missing_event_attribute_value,Missing / Event Attribute Value,hard,rule,6,True,1,,,,,,,,1,1,llm,update,,,0,False,,1.0254730498234832,0,0,0,,6.5
+missing_event_attribute_value,Missing / Event Attribute Value,hard,rule,7,True,1,,,,,,,,1,1,llm,update,,,0,False,,1.0254730498234832,0,0,0,,6.8
+missing_event_attribute_value,Missing / Event Attribute Value,hard,rule,8,True,1,,,,,,,,1,1,llm,update,,,0,False,,0.6308032614957383,0,0,0,,5.3
+missing_event_attribute_value,Missing / Event Attribute Value,hard,rule,9,True,1,,,,,,,,1,1,llm,update,,,0,False,,1.0254730498234832,0,0,0,,7.2
+missing_object,Missing / Object,easy,rule,0,True,3,,,,,,,dangling_o2o_relationship+4;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,1.8442000620393209,0,0,0,,16.4
+missing_object,Missing / Object,easy,rule,1,True,3,,,,,,,dangling_o2o_relationship+4;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,1.8442000620393209,0,0,0,,8.8
+missing_object,Missing / Object,easy,rule,2,True,3,,,,,,,dangling_o2o_relationship+4;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,1.8442000620393209,0,0,0,,7.7
+missing_object,Missing / Object,easy,rule,3,True,3,,,,,,,dangling_o2o_relationship+4;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,1.8442000620393209,0,0,0,,8.3
+missing_object,Missing / Object,easy,rule,4,True,3,,,,,,,dangling_o2o_relationship+4;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,1.8442000620393209,0,0,0,,8.0
+missing_object,Missing / Object,easy,rule,5,True,3,,,,,,,dangling_o2o_relationship+4;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,1.8442000620393209,0,0,0,,8.3
+missing_object,Missing / Object,easy,rule,6,True,3,,,,,,,dangling_o2o_relationship+4;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,1.8442000620393209,0,0,0,,7.3
+missing_object,Missing / Object,easy,rule,7,True,3,,,,,,,dangling_o2o_relationship+4;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,1.8442000620393209,0,0,0,,8.1
+missing_object,Missing / Object,easy,rule,8,True,3,,,,,,,dangling_o2o_relationship+4;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,1.8442000620393209,0,0,0,,8.2
+missing_object,Missing / Object,easy,rule,9,True,3,,,,,,,dangling_o2o_relationship+4;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,1.8442000620393209,0,0,0,,7.5
+missing_object,Missing / Object,hard,rule,0,True,2,,,,,,,dangling_o2o_relationship+18;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,0.5077793493635078,0,0,0,,9.9
+missing_object,Missing / Object,hard,rule,1,True,2,,,,,,,dangling_o2o_relationship+18;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,0.5077793493635078,0,0,0,,7.5
+missing_object,Missing / Object,hard,rule,2,True,2,,,,,,,dangling_o2o_relationship+18;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,0.45120226308345124,0,0,0,,6.9
+missing_object,Missing / Object,hard,rule,3,True,2,,,,,,,dangling_o2o_relationship+18;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,0.5077793493635078,0,0,0,,8.1
+missing_object,Missing / Object,hard,rule,4,True,2,,,,,,,dangling_o2o_relationship+18;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,0.5077793493635078,0,0,0,,7.9
+missing_object,Missing / Object,hard,rule,5,True,2,,,,,,,dangling_o2o_relationship+18;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,0.5285242809995285,0,0,0,,7.4
+missing_object,Missing / Object,hard,rule,6,True,2,,,,,,,dangling_o2o_relationship+18;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,0.5077793493635078,0,0,0,,7.0
+missing_object,Missing / Object,hard,rule,7,True,2,,,,,,,dangling_o2o_relationship+18;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,0.5285242809995285,0,0,0,,7.4
+missing_object,Missing / Object,hard,rule,8,True,2,,,,,,,dangling_o2o_relationship+18;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,0.45120226308345124,0,0,0,,7.2
+missing_object,Missing / Object,hard,rule,9,True,2,,,,,,,dangling_o2o_relationship+18;dangling_e2o_relationship+3,1,1,llm,insert,,,0,False,,0.5285242809995285,0,0,0,,6.9
+missing_object_type,Missing / Object Type,easy,rule,0,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,14.2
+missing_object_type,Missing / Object Type,easy,rule,1,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,6.6
+missing_object_type,Missing / Object Type,easy,rule,2,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,6.6
+missing_object_type,Missing / Object Type,easy,rule,3,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,6.8
+missing_object_type,Missing / Object Type,easy,rule,4,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,7.2
+missing_object_type,Missing / Object Type,easy,rule,5,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,6.3
+missing_object_type,Missing / Object Type,easy,rule,6,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,6.9
+missing_object_type,Missing / Object Type,easy,rule,7,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,6.9
+missing_object_type,Missing / Object Type,easy,rule,8,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,7.2
+missing_object_type,Missing / Object Type,easy,rule,9,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,8.1
+missing_object_type,Missing / Object Type,hard,rule,0,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,8.1
+missing_object_type,Missing / Object Type,hard,rule,1,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,7.3
+missing_object_type,Missing / Object Type,hard,rule,2,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,5.6
+missing_object_type,Missing / Object Type,hard,rule,3,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,6.4
+missing_object_type,Missing / Object Type,hard,rule,4,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,6.0
+missing_object_type,Missing / Object Type,hard,rule,5,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,7.1
+missing_object_type,Missing / Object Type,hard,rule,6,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,6.4
+missing_object_type,Missing / Object Type,hard,rule,7,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,8.2
+missing_object_type,Missing / Object Type,hard,rule,8,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,5.9
+missing_object_type,Missing / Object Type,hard,rule,9,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,7.3
+missing_object_attribute,Missing / Object Attribute,easy,llm,0,True,1,2,5,0,5,5,1,,2,2,detection;detection,alter_add_column;alter_add_column,,,0,False,,,,,,,48.8
+missing_object_attribute,Missing / Object Attribute,easy,llm,1,True,1,2,5,0,5,4,1,,2,2,detection;detection,alter_add_column;alter_add_column,,,0,False,,,,,,,44.1
+missing_object_attribute,Missing / Object Attribute,easy,llm,2,True,1,3,5,0,5,7,1,,2,2,detection;detection,alter_add_column;alter_add_column,,,0,False,,,,,,,48.9
+missing_object_attribute,Missing / Object Attribute,easy,llm,3,True,1,2,5,0,5,6,1,,2,2,detection;detection,alter_add_column;alter_add_column,,,0,False,,,,,,,41.9
+missing_object_attribute,Missing / Object Attribute,easy,llm,4,True,1,2,5,0,5,4,1,,2,2,detection;detection,alter_add_column;alter_add_column,,,0,False,,,,,,,44.3
+missing_object_attribute,Missing / Object Attribute,easy,llm,5,True,1,2,5,0,5,4,1,,2,2,detection;detection,alter_add_column;alter_add_column,,,0,False,,,,,,,43.8
+missing_object_attribute,Missing / Object Attribute,easy,llm,6,True,1,2,5,0,5,8,1,,2,2,detection;detection,alter_add_column;alter_add_column,,,0,False,,,,,,,56.9
+missing_object_attribute,Missing / Object Attribute,easy,llm,7,True,1,2,5,0,5,4,1,,2,2,detection;detection,alter_add_column;alter_add_column,,,0,False,,,,,,,41.7
+missing_object_attribute,Missing / Object Attribute,easy,llm,8,True,1,3,5,0,5,5,1,,2,2,detection;detection,alter_add_column;alter_add_column,,,0,False,,,,,,,43.9
+missing_object_attribute,Missing / Object Attribute,easy,llm,9,True,1,2,5,0,5,8,1,,2,2,detection;detection,alter_add_column;alter_add_column,,,0,False,,,,,,,50.1
+missing_object_attribute,Missing / Object Attribute,hard,llm,0,True,1,3,5,0,5,7,1,,2,2,detection;detection,alter_add_column;alter_add_column,,,0,False,,,,,,,43.7
+missing_object_attribute,Missing / Object Attribute,hard,llm,1,True,1,2,5,0,5,6,1,,2,2,detection;detection,alter_add_column;alter_add_column,,,0,False,,,,,,,43.2
+missing_object_attribute,Missing / Object Attribute,hard,llm,2,True,1,2,5,0,5,6,1,,2,2,detection;detection,alter_add_column;alter_add_column,,,0,False,,,,,,,43.7
+missing_object_attribute,Missing / Object Attribute,hard,llm,3,False,1,2,5,0,5,3,0,,0,0,,,,,0,False,,,,,,,43.1
+missing_object_attribute,Missing / Object Attribute,hard,llm,4,True,1,3,5,0,5,6,1,,2,2,detection;detection,alter_add_column;alter_add_column,,,0,False,,,,,,,43.6
+missing_object_attribute,Missing / Object Attribute,hard,llm,5,True,1,2,5,0,5,4,1,,2,2,detection;detection,alter_add_column;alter_add_column,,,0,False,,,,,,,39.1
+missing_object_attribute,Missing / Object Attribute,hard,llm,6,True,1,1,5,0,5,3,1,,2,2,detection;detection,alter_add_column;alter_add_column,,,0,False,,,,,,,47.2
+missing_object_attribute,Missing / Object Attribute,hard,llm,7,True,1,2,5,0,5,8,1,,2,2,detection;detection,alter_add_column;alter_add_column,,,0,False,,,,,,,48.2
+missing_object_attribute,Missing / Object Attribute,hard,llm,8,True,1,3,5,0,5,5,1,,2,2,detection;detection,alter_add_column;alter_add_column,,,0,False,,,,,,,43.2
+missing_object_attribute,Missing / Object Attribute,hard,llm,9,True,1,3,5,0,5,7,1,,2,2,detection;detection,alter_add_column;alter_add_column,,,0,False,,,,,,,42.5
+missing_attribute_value,Missing / Object Attribute Value,easy,rule,0,True,1,,,,,,,,1,1,llm,update,,,0,False,,0.6153846153846154,5,0,0,,16.2
+missing_attribute_value,Missing / Object Attribute Value,easy,rule,1,True,1,,,,,,,,1,1,llm,update,,,0,False,,0.6153846153846154,5,0,0,,6.0
+missing_attribute_value,Missing / Object Attribute Value,easy,rule,2,True,1,,,,,,,,1,1,llm,update,,,0,False,,0.6153846153846154,5,0,0,,5.2
+missing_attribute_value,Missing / Object Attribute Value,easy,rule,3,True,1,,,,,,,,1,1,llm,update,,,0,False,,0.6153846153846154,5,0,0,,8.0
+missing_attribute_value,Missing / Object Attribute Value,easy,rule,4,True,1,,,,,,,,1,1,llm,update,,,0,False,,0.6153846153846154,5,0,0,,6.9
+missing_attribute_value,Missing / Object Attribute Value,easy,rule,5,True,1,,,,,,,,1,1,llm,update,,,0,False,,0.48717948717948717,5,0,0,,9.6
+missing_attribute_value,Missing / Object Attribute Value,easy,rule,6,True,1,,,,,,,,1,1,llm,update,,,0,False,,0.6153846153846154,5,0,0,,8.5
+missing_attribute_value,Missing / Object Attribute Value,easy,rule,7,True,1,,,,,,,,1,1,llm,update,,,0,False,,0.6153846153846154,5,0,0,,8.1
+missing_attribute_value,Missing / Object Attribute Value,easy,rule,8,True,1,,,,,,,,1,1,llm,update,,,0,False,,0.6153846153846154,5,0,0,,7.8
+missing_attribute_value,Missing / Object Attribute Value,easy,rule,9,True,1,,,,,,,,1,1,llm,update,,,0,False,,0.6153846153846154,5,0,0,,6.5
+missing_attribute_value,Missing / Object Attribute Value,hard,rule,0,True,1,,,,,,,,1,1,llm,update,,,0,False,,1.215682654101242,0,0,0,,9.0
+missing_attribute_value,Missing / Object Attribute Value,hard,rule,1,True,1,,,,,,,,1,1,llm,update,,,0,False,,0.3712610230579477,0,0,0,,5.9
+missing_attribute_value,Missing / Object Attribute Value,hard,rule,2,True,1,,,,,,,,1,1,llm,update,,,0,False,,0.6053560613893852,0,0,0,,6.0
+missing_attribute_value,Missing / Object Attribute Value,hard,rule,3,True,1,,,,,,,,1,1,llm,update,,,0,False,,0.9571928684323254,0,0,0,,5.6
+missing_attribute_value,Missing / Object Attribute Value,hard,rule,4,True,1,,,,,,,,1,1,llm,update,,,0,False,,0.6065820765447054,0,0,0,,5.8
+missing_attribute_value,Missing / Object Attribute Value,hard,rule,5,True,1,,,,,,,,1,1,llm,update,,,0,False,,1.030916261687765,0,0,0,,5.9
+missing_attribute_value,Missing / Object Attribute Value,hard,rule,6,True,1,,,,,,,,1,1,llm,update,,,0,False,,0.47711930752300624,0,0,0,,5.4
+missing_attribute_value,Missing / Object Attribute Value,hard,rule,7,True,1,,,,,,,,1,1,llm,update,,,0,False,,1.1574764767574113,0,0,0,,6.0
+missing_attribute_value,Missing / Object Attribute Value,hard,rule,8,True,1,,,,,,,,1,1,llm,update,,,0,False,,1.067866585917074,0,0,0,,5.4
+missing_attribute_value,Missing / Object Attribute Value,hard,rule,9,True,1,,,,,,,,1,1,llm,update,,,0,False,,0.4680275927266282,0,0,0,,5.9
+dangling_o2o_relationship,Missing / Object-to-Object,easy,rule,0,True,1,,,,,,,,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_o2o_relationship,Missing / Object-to-Object,easy,rule,1,True,1,,,,,,,,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_o2o_relationship,Missing / Object-to-Object,easy,rule,2,True,1,,,,,,,,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_o2o_relationship,Missing / Object-to-Object,easy,rule,3,True,1,,,,,,,,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_o2o_relationship,Missing / Object-to-Object,easy,rule,4,True,1,,,,,,,,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_o2o_relationship,Missing / Object-to-Object,easy,rule,5,True,1,,,,,,,,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_o2o_relationship,Missing / Object-to-Object,easy,rule,6,True,1,,,,,,,,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_o2o_relationship,Missing / Object-to-Object,easy,rule,7,True,1,,,,,,,,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_o2o_relationship,Missing / Object-to-Object,easy,rule,8,True,1,,,,,,,,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_o2o_relationship,Missing / Object-to-Object,easy,rule,9,True,1,,,,,,,,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_o2o_relationship,Missing / Object-to-Object,hard,rule,0,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+dangling_o2o_relationship,Missing / Object-to-Object,hard,rule,1,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+dangling_o2o_relationship,Missing / Object-to-Object,hard,rule,2,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+dangling_o2o_relationship,Missing / Object-to-Object,hard,rule,3,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+dangling_o2o_relationship,Missing / Object-to-Object,hard,rule,4,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+dangling_o2o_relationship,Missing / Object-to-Object,hard,rule,5,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+dangling_o2o_relationship,Missing / Object-to-Object,hard,rule,6,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+dangling_o2o_relationship,Missing / Object-to-Object,hard,rule,7,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+dangling_o2o_relationship,Missing / Object-to-Object,hard,rule,8,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+dangling_o2o_relationship,Missing / Object-to-Object,hard,rule,9,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+dangling_e2o_relationship,Missing / Event-to-Object,easy,rule,0,True,1,,,,,,,missing_object+1,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_e2o_relationship,Missing / Event-to-Object,easy,rule,1,True,1,,,,,,,missing_object+1,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_e2o_relationship,Missing / Event-to-Object,easy,rule,2,True,1,,,,,,,missing_object+1,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_e2o_relationship,Missing / Event-to-Object,easy,rule,3,True,1,,,,,,,missing_object+1,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_e2o_relationship,Missing / Event-to-Object,easy,rule,4,True,1,,,,,,,missing_object+1,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_e2o_relationship,Missing / Event-to-Object,easy,rule,5,True,1,,,,,,,missing_object+1,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_e2o_relationship,Missing / Event-to-Object,easy,rule,6,True,1,,,,,,,missing_object+1,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_e2o_relationship,Missing / Event-to-Object,easy,rule,7,True,1,,,,,,,missing_object+1,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_e2o_relationship,Missing / Event-to-Object,easy,rule,8,True,1,,,,,,,missing_object+1,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_e2o_relationship,Missing / Event-to-Object,easy,rule,9,True,1,,,,,,,missing_object+1,1,1,rule,update,,,0,True,,,0,0,0,,3.1
+dangling_e2o_relationship,Missing / Event-to-Object,hard,rule,0,True,1,,,,,,,missing_event+1;missing_object+1,2,2,rule;llm,update;update,,,0,True,,,0,0,0,,14.3
+dangling_e2o_relationship,Missing / Event-to-Object,hard,rule,1,True,1,,,,,,,missing_event+1;missing_object+1,2,2,rule;llm,update;update,,,0,True,,,0,0,0,,7.1
+dangling_e2o_relationship,Missing / Event-to-Object,hard,rule,2,True,1,,,,,,,missing_event+1;missing_object+1,2,2,rule;llm,update;update,,,0,True,,,0,0,0,,7.6
+dangling_e2o_relationship,Missing / Event-to-Object,hard,rule,3,True,1,,,,,,,missing_event+1;missing_object+1,2,2,rule;llm,update;update,,,0,True,,,0,0,0,,7.9
+dangling_e2o_relationship,Missing / Event-to-Object,hard,rule,4,True,1,,,,,,,missing_event+1;missing_object+1,2,2,rule;llm,update;update,,,0,True,,,0,0,0,,8.0
+dangling_e2o_relationship,Missing / Event-to-Object,hard,rule,5,True,1,,,,,,,missing_event+1;missing_object+1,2,2,rule;llm,update;update,,,0,True,,,0,0,0,,7.6
+dangling_e2o_relationship,Missing / Event-to-Object,hard,rule,6,True,1,,,,,,,missing_event+1;missing_object+1,2,2,rule;llm,update;update,,,0,True,,,0,0,0,,7.5
+dangling_e2o_relationship,Missing / Event-to-Object,hard,rule,7,True,1,,,,,,,missing_event+1;missing_object+1,2,2,rule;llm,update;update,,,0,True,,,0,0,0,,7.1
+dangling_e2o_relationship,Missing / Event-to-Object,hard,rule,8,True,1,,,,,,,missing_event+1;missing_object+1,2,2,rule;llm,update;update,,,0,True,,,0,0,0,,7.5
+dangling_e2o_relationship,Missing / Event-to-Object,hard,rule,9,True,1,,,,,,,missing_event+1;missing_object+1,2,2,rule;llm,update;update,,,0,True,,,0,0,0,,8.4
+duplicate_events_on_ids,Incorrect / Event,easy,rule,0,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_ids,Incorrect / Event,easy,rule,1,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_ids,Incorrect / Event,easy,rule,2,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_ids,Incorrect / Event,easy,rule,3,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_ids,Incorrect / Event,easy,rule,4,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_ids,Incorrect / Event,easy,rule,5,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_ids,Incorrect / Event,easy,rule,6,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_ids,Incorrect / Event,easy,rule,7,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_ids,Incorrect / Event,easy,rule,8,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_ids,Incorrect / Event,easy,rule,9,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_ids,Incorrect / Event,hard,rule,0,True,1,,,,,,,,1,1,llm,delete_all,,,0,True,,,0,0,0,,16.0
+duplicate_events_on_ids,Incorrect / Event,hard,rule,1,True,1,,,,,,,,1,1,llm,delete_all,,,0,True,,,0,0,0,,8.0
+duplicate_events_on_ids,Incorrect / Event,hard,rule,2,True,1,,,,,,,,1,1,llm,delete_all,,,0,True,,,0,0,0,,7.5
+duplicate_events_on_ids,Incorrect / Event,hard,rule,3,True,1,,,,,,,,1,1,llm,delete_all,,,0,True,,,0,0,0,,8.1
+duplicate_events_on_ids,Incorrect / Event,hard,rule,4,True,1,,,,,,,,1,1,llm,delete_all,,,0,True,,,0,0,0,,9.3
+duplicate_events_on_ids,Incorrect / Event,hard,rule,5,True,1,,,,,,,,1,1,llm,delete_all,,,0,True,,,0,0,0,,8.4
+duplicate_events_on_ids,Incorrect / Event,hard,rule,6,True,1,,,,,,,,1,1,llm,delete_all,,,0,True,,,0,0,0,,8.7
+duplicate_events_on_ids,Incorrect / Event,hard,rule,7,True,1,,,,,,,,1,1,llm,delete_all,,,0,True,,,0,0,0,,9.7
+duplicate_events_on_ids,Incorrect / Event,hard,rule,8,True,1,,,,,,,,1,1,llm,delete_all,,,0,True,,,0,0,0,,9.2
+duplicate_events_on_ids,Incorrect / Event,hard,rule,9,True,1,,,,,,,,1,1,llm,delete_all,,,0,True,,,0,0,0,,10.3
+duplicate_events_on_attributes,Incorrect / Event,easy,rule,0,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_attributes,Incorrect / Event,easy,rule,1,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_attributes,Incorrect / Event,easy,rule,2,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_attributes,Incorrect / Event,easy,rule,3,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_attributes,Incorrect / Event,easy,rule,4,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_attributes,Incorrect / Event,easy,rule,5,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_attributes,Incorrect / Event,easy,rule,6,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_attributes,Incorrect / Event,easy,rule,7,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_attributes,Incorrect / Event,easy,rule,8,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_attributes,Incorrect / Event,easy,rule,9,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_attributes,Incorrect / Event,hard,rule,0,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_attributes,Incorrect / Event,hard,rule,1,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_attributes,Incorrect / Event,hard,rule,2,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_attributes,Incorrect / Event,hard,rule,3,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_attributes,Incorrect / Event,hard,rule,4,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_attributes,Incorrect / Event,hard,rule,5,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_attributes,Incorrect / Event,hard,rule,6,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_attributes,Incorrect / Event,hard,rule,7,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_attributes,Incorrect / Event,hard,rule,8,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+duplicate_events_on_attributes,Incorrect / Event,hard,rule,9,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.1
+incorrect_event_type,Incorrect / Event Type,easy,llm,0,False,1,0,20,0,7659,,,,0,0,,,,,0,False,,,,,,,100.9
+incorrect_event_type,Incorrect / Event Type,easy,llm,1,True,1,0,20,0,7659,,,,1,1,llm,update,,,0,True,,,0,0,0,,113.5
+incorrect_event_type,Incorrect / Event Type,easy,llm,2,False,1,0,20,0,7659,,,,0,0,,,,,0,False,,,,,,,97.3
+incorrect_event_type,Incorrect / Event Type,easy,llm,3,True,1,0,20,0,7659,,,,1,1,llm,update,,,0,True,,,0,0,0,,97.0
+incorrect_event_type,Incorrect / Event Type,easy,llm,4,False,1,0,20,0,7659,,,,0,0,,,,,0,False,,,,,,,98.5
+incorrect_event_type,Incorrect / Event Type,easy,llm,5,True,1,0,20,0,7659,,,,1,1,llm,update,,,0,True,,,0,0,0,,101.7
+incorrect_event_type,Incorrect / Event Type,easy,llm,6,True,1,0,20,0,7659,,,,1,1,llm,update,,,0,True,,,0,0,0,,111.8
+incorrect_event_type,Incorrect / Event Type,easy,llm,7,False,1,0,20,0,7659,,,,0,0,,,,,0,False,,,,,,,111.0
+incorrect_event_type,Incorrect / Event Type,easy,llm,8,True,1,0,20,0,7659,,,,1,1,llm,update,,,0,True,,,0,0,0,,104.9
+incorrect_event_type,Incorrect / Event Type,easy,llm,9,False,1,0,20,0,7659,,,,0,0,,,,,0,False,,,,,,,96.3
+incorrect_event_type,Incorrect / Event Type,hard,llm,0,False,1,0,20,0,2000,,,missing_event_attribute_value+1,0,0,,,,,0,False,,,,,,,110.6
+incorrect_event_type,Incorrect / Event Type,hard,llm,1,False,1,0,20,0,2000,,,missing_event_attribute_value+1,0,0,,,,,0,False,,,,,,,128.8
+incorrect_event_type,Incorrect / Event Type,hard,llm,2,False,1,0,20,0,2000,,,missing_event_attribute_value+1,0,0,,,,,0,False,,,,,,,122.0
+incorrect_event_type,Incorrect / Event Type,hard,llm,3,False,1,0,20,0,2000,,,missing_event_attribute_value+1,0,0,,,,,0,False,,,,,,,118.1
+incorrect_event_type,Incorrect / Event Type,hard,llm,4,False,1,0,20,0,2000,,,missing_event_attribute_value+1,0,0,,,,,0,False,,,,,,,118.2
+incorrect_event_type,Incorrect / Event Type,hard,llm,5,False,1,0,20,0,2000,,,missing_event_attribute_value+1,0,0,,,,,0,False,,,,,,,114.8
+incorrect_event_type,Incorrect / Event Type,hard,llm,6,False,1,0,20,0,2000,,,missing_event_attribute_value+1,0,0,,,,,0,False,,,,,,,115.0
+incorrect_event_type,Incorrect / Event Type,hard,llm,7,False,1,0,20,0,2000,,,missing_event_attribute_value+1,0,0,,,,,0,False,,,,,,,122.8
+incorrect_event_type,Incorrect / Event Type,hard,llm,8,True,1,0,20,0,2000,,,missing_event_attribute_value+1,1,1,llm,update,,,0,True,,,0,0,0,,118.8
+incorrect_event_type,Incorrect / Event Type,hard,llm,9,False,1,0,20,0,2000,,,missing_event_attribute_value+1,0,0,,,,,0,False,,,,,,,120.5
+incorrect_event_time,Incorrect / Event Time,easy,llm,0,True,1,20,20,0,1999,,,,1,1,llm,update,,,0,False,1684.5166666666667,,0,0,0,,318.2
+incorrect_event_time,Incorrect / Event Time,easy,llm,1,True,1,20,20,0,1999,,,,1,1,llm,update,,,0,False,1691.7,,0,0,0,,287.7
+incorrect_event_time,Incorrect / Event Time,easy,llm,2,True,1,20,20,0,1999,,,,1,1,llm,update,,,0,False,1684.5166666666667,,0,0,0,,280.6
+incorrect_event_time,Incorrect / Event Time,easy,llm,3,True,1,20,20,0,1999,,,,1,1,llm,update,,,0,False,1302.05,,0,0,0,,275.4
+incorrect_event_time,Incorrect / Event Time,easy,llm,4,True,1,20,20,0,1999,,,,1,1,llm,update,,,0,False,1302.05,,0,0,0,,281.3
+incorrect_event_time,Incorrect / Event Time,easy,llm,5,True,1,20,20,0,1999,,,,1,1,llm,update,,,0,False,1689.6833333333334,,0,0,0,,284.3
+incorrect_event_time,Incorrect / Event Time,easy,llm,6,True,1,20,20,0,1999,,,,1,1,llm,update,,,0,False,1686.7,,0,0,0,,286.7
+incorrect_event_time,Incorrect / Event Time,easy,llm,7,True,1,20,20,0,1999,,,,1,1,llm,update,,,0,False,1684.5166666666667,,0,0,0,,276.9
+incorrect_event_time,Incorrect / Event Time,easy,llm,8,True,1,20,20,0,1999,,,,1,1,llm,update,,,0,False,1684.5166666666667,,0,0,0,,289.5
+incorrect_event_time,Incorrect / Event Time,easy,llm,9,True,1,20,20,0,1999,,,,1,1,llm,update,,,0,False,1689.6833333333334,,0,0,0,,298.6
+incorrect_event_time,Incorrect / Event Time,hard,llm,0,True,1,19,20,0,1999,,,,1,1,llm,update,,,0,False,1669.4833333333333,,0,0,0,,299.1
+incorrect_event_time,Incorrect / Event Time,hard,llm,1,True,1,19,20,0,1999,,,,1,1,llm,update,,,0,False,1694.4833333333333,,0,0,0,,287.9
+incorrect_event_time,Incorrect / Event Time,hard,llm,2,True,1,20,20,0,1999,,,,1,1,llm,update,,,0,False,1669.4833333333333,,0,0,0,,291.3
+incorrect_event_time,Incorrect / Event Time,hard,llm,3,True,1,20,20,0,1999,,,,1,1,llm,update,,,0,False,1664.4833333333333,,0,0,0,,293.6
+incorrect_event_time,Incorrect / Event Time,hard,llm,4,True,1,18,20,0,1999,,,,1,1,llm,update,,,0,False,1659.6,,0,0,0,,288.9
+incorrect_event_time,Incorrect / Event Time,hard,llm,5,True,1,20,20,0,1999,,,,1,1,llm,update,,,0,False,1664.4833333333333,,0,0,0,,281.4
+incorrect_event_time,Incorrect / Event Time,hard,llm,6,True,1,19,20,0,1999,,,,1,1,llm,update,,,0,False,1669.6,,0,0,0,,276.4
+incorrect_event_time,Incorrect / Event Time,hard,llm,7,True,1,20,20,0,1999,,,,1,1,llm,update,,,0,False,1669.4833333333333,,0,0,0,,285.1
+incorrect_event_time,Incorrect / Event Time,hard,llm,8,True,1,20,20,0,1999,,,,1,1,llm,update,,,0,False,1669.4833333333333,,0,0,0,,284.2
+incorrect_event_time,Incorrect / Event Time,hard,llm,9,True,1,20,20,0,1999,,,,1,1,llm,update,,,0,False,1664.4833333333333,,0,0,0,,288.0
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,easy,rule,0,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.11046059033409023,0,0,0,,9.8
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,easy,rule,1,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.11046059033409023,0,0,0,,7.7
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,easy,rule,2,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.11046059033409023,0,0,0,,7.2
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,easy,rule,3,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.11046059033409023,0,0,0,,8.0
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,easy,rule,4,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.11046059033409023,0,0,0,,8.3
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,easy,rule,5,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.11046059033409023,0,0,0,,7.5
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,easy,rule,6,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.11046059033409023,0,0,0,,7.3
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,easy,rule,7,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.11046059033409023,0,0,0,,8.0
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,easy,rule,8,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.43561466104443725,0,0,0,,6.7
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,easy,rule,9,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.11046059033409023,0,0,0,,8.3
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,hard,rule,0,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,11.9
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,hard,rule,1,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,7.3
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,hard,rule,2,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,7.1
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,hard,rule,3,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,6.9
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,hard,rule,4,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,7.3
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,hard,rule,5,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,7.0
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,hard,rule,6,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,7.9
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,hard,rule,7,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,7.1
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,hard,rule,8,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,7.5
+incorrect_event_attribute_datatype,Incorrect / Event Attribute Type,hard,rule,9,True,1,,,,,,,,1,1,llm,update,,,0,True,,,0,0,0,,7.3
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,easy,llm,0,True,1,1,20,0,3999,,,,1,1,llm,update,,,0,False,,0.7224992291645255,0,0,0,,177.2
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,easy,llm,1,True,1,1,20,0,3999,,,,1,1,llm,update,,,0,False,,0.7224992291645255,0,0,0,,162.7
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,easy,llm,2,True,1,1,20,0,3999,,,,1,1,llm,update,,,0,False,,0.7224992291645255,0,0,0,,165.7
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,easy,llm,3,True,1,1,20,0,3999,,,,1,1,llm,update,,,0,False,,0.7224992291645255,0,0,0,,162.2
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,easy,llm,4,True,1,4,20,0,3999,,,,1,1,llm,update,,,0,False,,0.7224992291645255,0,0,0,,169.5
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,easy,llm,5,True,1,2,20,0,3999,,,,1,1,llm,update,,,0,False,,0.7224992291645255,0,0,0,,163.0
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,easy,llm,6,True,1,1,20,0,3999,,,,1,1,llm,update,,,0,False,,0.7224992291645255,0,0,0,,163.3
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,easy,llm,7,True,1,0,20,0,3999,,,,1,1,llm,update,,,0,False,,0.7224992291645255,0,0,0,,160.8
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,easy,llm,8,True,1,3,20,0,3999,,,,1,1,llm,update,,,0,False,,0.7224992291645255,0,0,0,,163.6
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,easy,llm,9,True,1,2,20,0,3999,,,,1,1,llm,update,,,0,False,,0.7224992291645255,0,0,0,,162.7
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,hard,llm,0,True,1,1,20,0,7658,,,,1,1,llm,update,,,0,False,,,1,0,0,,171.3
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,hard,llm,1,True,1,3,20,0,7658,,,,1,1,llm,update,,,0,False,,,1,0,0,,171.5
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,hard,llm,2,True,1,1,20,0,7658,,,,1,1,llm,update,,,0,False,,,1,0,0,,171.5
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,hard,llm,3,True,1,4,20,0,7658,,,,1,1,llm,update,,,0,False,,,1,0,0,,167.3
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,hard,llm,4,True,1,1,20,0,7658,,,,1,1,llm,update,,,0,False,,,1,0,0,,174.5
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,hard,llm,5,True,1,8,20,0,7658,,,,1,1,llm,update,,,0,False,,,1,0,0,,180.4
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,hard,llm,6,True,1,2,20,0,7658,,,,1,1,llm,update,,,0,False,,,1,0,0,,175.3
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,hard,llm,7,True,1,4,20,0,7658,,,,1,1,llm,update,,,0,False,,,1,0,0,,178.6
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,hard,llm,8,True,1,3,20,0,7658,,,,1,1,llm,update,,,0,False,,,1,0,0,,173.8
+incorrect_event_attribute_value,Incorrect / Event Attribute Value,hard,llm,9,True,1,2,20,0,7658,,,,1,1,llm,update,,,0,False,,,1,0,0,,165.7
+duplicate_objects_on_ids,Incorrect / Object,easy,rule,0,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_ids,Incorrect / Object,easy,rule,1,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_ids,Incorrect / Object,easy,rule,2,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_ids,Incorrect / Object,easy,rule,3,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_ids,Incorrect / Object,easy,rule,4,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.3
+duplicate_objects_on_ids,Incorrect / Object,easy,rule,5,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_ids,Incorrect / Object,easy,rule,6,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_ids,Incorrect / Object,easy,rule,7,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_ids,Incorrect / Object,easy,rule,8,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_ids,Incorrect / Object,easy,rule,9,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_ids,Incorrect / Object,hard,rule,0,True,1,,,,,,,,2,2,llm;rule,delete_all;delete,,,0,True,,,0,0,0,,15.4
+duplicate_objects_on_ids,Incorrect / Object,hard,rule,1,True,1,,,,,,,,2,2,llm;rule,delete_all;delete,,,0,True,,,0,0,0,,9.3
+duplicate_objects_on_ids,Incorrect / Object,hard,rule,2,True,1,,,,,,,,2,2,llm;rule,delete_all;delete,,,0,True,,,0,0,0,,9.9
+duplicate_objects_on_ids,Incorrect / Object,hard,rule,3,True,1,,,,,,,,2,2,llm;rule,delete_all;delete,,,0,True,,,0,0,0,,10.1
+duplicate_objects_on_ids,Incorrect / Object,hard,rule,4,True,1,,,,,,,,2,2,llm;rule,delete_all;delete,,,0,True,,,0,0,0,,9.5
+duplicate_objects_on_ids,Incorrect / Object,hard,rule,5,True,1,,,,,,,,2,2,llm;rule,delete_all;delete,,,0,True,,,0,0,0,,8.6
+duplicate_objects_on_ids,Incorrect / Object,hard,rule,6,True,1,,,,,,,,2,2,llm;rule,delete_all;delete,,,0,True,,,0,0,0,,10.0
+duplicate_objects_on_ids,Incorrect / Object,hard,rule,7,True,1,,,,,,,,2,2,llm;rule,delete_all;delete,,,0,True,,,0,0,0,,9.2
+duplicate_objects_on_ids,Incorrect / Object,hard,rule,8,True,1,,,,,,,,2,2,llm;rule,delete_all;delete,,,0,True,,,0,0,0,,9.1
+duplicate_objects_on_ids,Incorrect / Object,hard,rule,9,True,1,,,,,,,,2,2,llm;rule,delete_all;delete,,,0,True,,,0,0,0,,9.6
+duplicate_objects_on_attributes,Incorrect / Object,easy,rule,0,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_attributes,Incorrect / Object,easy,rule,1,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_attributes,Incorrect / Object,easy,rule,2,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_attributes,Incorrect / Object,easy,rule,3,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_attributes,Incorrect / Object,easy,rule,4,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_attributes,Incorrect / Object,easy,rule,5,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_attributes,Incorrect / Object,easy,rule,6,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_attributes,Incorrect / Object,easy,rule,7,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_attributes,Incorrect / Object,easy,rule,8,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_attributes,Incorrect / Object,easy,rule,9,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_attributes,Incorrect / Object,hard,rule,0,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_attributes,Incorrect / Object,hard,rule,1,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_attributes,Incorrect / Object,hard,rule,2,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.3
+duplicate_objects_on_attributes,Incorrect / Object,hard,rule,3,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_attributes,Incorrect / Object,hard,rule,4,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.3
+duplicate_objects_on_attributes,Incorrect / Object,hard,rule,5,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_attributes,Incorrect / Object,hard,rule,6,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.2
+duplicate_objects_on_attributes,Incorrect / Object,hard,rule,7,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.3
+duplicate_objects_on_attributes,Incorrect / Object,hard,rule,8,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.3
+duplicate_objects_on_attributes,Incorrect / Object,hard,rule,9,True,1,,,,,,,,1,1,rule,batch,,,0,True,,,0,0,0,,3.2
+incorrect_object_type,Incorrect / Object Type,easy,llm,0,True,1,18,18,0,18,,,,1,1,llm,update,,,0,True,,,0,0,0,,134.6
+incorrect_object_type,Incorrect / Object Type,easy,llm,1,True,1,18,18,0,18,,,,1,1,llm,update,,,0,True,,,0,0,0,,129.7
+incorrect_object_type,Incorrect / Object Type,easy,llm,2,True,1,18,18,0,18,,,,1,1,llm,update,,,0,True,,,0,0,0,,135.3
+incorrect_object_type,Incorrect / Object Type,easy,llm,3,True,1,18,18,0,18,,,,1,1,llm,update,,,0,True,,,0,0,0,,115.0
+incorrect_object_type,Incorrect / Object Type,easy,llm,4,True,1,18,18,0,18,,,,1,1,llm,update,,,0,True,,,0,0,0,,132.5
+incorrect_object_type,Incorrect / Object Type,easy,llm,5,True,1,18,18,0,18,,,,1,1,llm,update,,,0,True,,,0,0,0,,133.9
+incorrect_object_type,Incorrect / Object Type,easy,llm,6,True,1,18,18,0,18,,,,1,1,llm,update,,,0,True,,,0,0,0,,132.3
+incorrect_object_type,Incorrect / Object Type,easy,llm,7,True,1,18,18,0,18,,,,1,1,llm,update,,,0,True,,,0,0,0,,121.3
+incorrect_object_type,Incorrect / Object Type,easy,llm,8,True,1,18,18,0,18,,,,1,1,llm,update,,,0,True,,,0,0,0,,119.7
+incorrect_object_type,Incorrect / Object Type,easy,llm,9,True,1,18,18,0,18,,,,1,1,llm,update,,,0,True,,,0,0,0,,118.6
+incorrect_object_type,Incorrect / Object Type,hard,llm,0,True,1,17,20,0,20,,,,1,1,llm,update,,,0,True,,,0,0,0,,137.2
+incorrect_object_type,Incorrect / Object Type,hard,llm,1,True,1,19,20,0,20,,,,1,1,llm,update,,,0,True,,,0,0,0,,140.6
+incorrect_object_type,Incorrect / Object Type,hard,llm,2,True,1,19,20,0,20,,,,1,1,llm,update,,,0,True,,,0,0,0,,154.4
+incorrect_object_type,Incorrect / Object Type,hard,llm,3,True,1,19,20,0,20,,,,1,1,llm,update,,,0,True,,,0,0,0,,147.7
+incorrect_object_type,Incorrect / Object Type,hard,llm,4,True,1,19,20,0,20,,,,1,1,llm,update,,,0,True,,,0,0,0,,145.7
+incorrect_object_type,Incorrect / Object Type,hard,llm,5,True,1,19,20,0,20,,,,1,1,llm,update,,,0,True,,,0,0,0,,151.4
+incorrect_object_type,Incorrect / Object Type,hard,llm,6,True,1,19,20,0,20,,,,1,1,llm,update,,,0,True,,,0,0,0,,160.3
+incorrect_object_type,Incorrect / Object Type,hard,llm,7,True,1,17,20,0,20,,,,1,1,llm,update,,,0,True,,,0,0,0,,135.8
+incorrect_object_type,Incorrect / Object Type,hard,llm,8,True,1,19,20,0,20,,,,1,1,llm,update,,,0,True,,,0,0,0,,149.4
+incorrect_object_type,Incorrect / Object Type,hard,llm,9,True,1,17,20,0,20,,,,1,1,llm,update,,,0,True,,,0,0,0,,136.3
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,easy,rule,0,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.6153846153846154,5,0,0,,17.8
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,easy,rule,1,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.6153846153846154,5,0,0,,6.5
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,easy,rule,2,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.6153846153846154,5,0,0,,5.8
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,easy,rule,3,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.6153846153846154,5,0,0,,8.9
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,easy,rule,4,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.6153846153846154,5,0,0,,7.9
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,easy,rule,5,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.48717948717948717,5,0,0,,9.9
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,easy,rule,6,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.6153846153846154,5,0,0,,9.1
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,easy,rule,7,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.6153846153846154,5,0,0,,9.0
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,easy,rule,8,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.6153846153846154,5,0,0,,8.7
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,easy,rule,9,True,1,,,,,,,,2,2,rule;llm,update;followup:update,,,0,False,,0.6153846153846154,5,0,0,,7.4
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,hard,rule,0,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,14.0
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,hard,rule,1,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,7.0
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,hard,rule,2,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,8.3
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,hard,rule,3,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,7.7
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,hard,rule,4,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,7.7
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,hard,rule,5,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,7.1
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,hard,rule,6,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,7.1
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,hard,rule,7,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,7.2
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,hard,rule,8,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,7.1
+incorrect_attribute_datatype,Incorrect / Object Attribute Type,hard,rule,9,True,1,,,,,,,,1,1,llm,update,,,0,False,,,1,0,0,,7.0
+incorrect_attribute_value,Incorrect / Object Attribute Value,easy,llm,0,True,1,16,20,0,139,,,,1,1,llm,update,,,0,False,,0.641025641025641,5,0,0,,230.3
+incorrect_attribute_value,Incorrect / Object Attribute Value,easy,llm,1,True,1,16,20,0,139,,,,1,1,llm,update,,,0,False,,0.641025641025641,5,0,0,,220.5
+incorrect_attribute_value,Incorrect / Object Attribute Value,easy,llm,2,True,1,18,20,0,139,,,,1,1,llm,update,,,0,False,,0.641025641025641,5,0,0,,225.5
+incorrect_attribute_value,Incorrect / Object Attribute Value,easy,llm,3,True,1,16,20,0,139,,,,1,1,llm,update,,,0,False,,0.641025641025641,5,0,0,,207.8
+incorrect_attribute_value,Incorrect / Object Attribute Value,easy,llm,4,True,1,15,20,0,139,,,,1,1,llm,update,,,0,False,,0.641025641025641,5,0,0,,209.4
+incorrect_attribute_value,Incorrect / Object Attribute Value,easy,llm,5,True,1,15,20,0,139,,,,1,1,llm,update,,,0,False,,0.641025641025641,5,0,0,,227.8
+incorrect_attribute_value,Incorrect / Object Attribute Value,easy,llm,6,True,1,15,20,0,139,,,,1,1,llm,update,,,0,False,,0.641025641025641,5,0,0,,216.1
+incorrect_attribute_value,Incorrect / Object Attribute Value,easy,llm,7,True,1,19,20,0,139,,,,1,1,llm,update,,,0,False,,0.641025641025641,5,0,0,,217.5
+incorrect_attribute_value,Incorrect / Object Attribute Value,easy,llm,8,True,1,20,20,0,139,,,,1,1,llm,update,,,0,False,,0.641025641025641,5,0,0,,225.1
+incorrect_attribute_value,Incorrect / Object Attribute Value,easy,llm,9,True,1,18,20,0,139,,,,1,1,llm,update,,,0,False,,0.641025641025641,5,0,0,,215.1
+incorrect_attribute_value,Incorrect / Object Attribute Value,hard,llm,0,True,1,16,20,0,139,,,,1,1,llm,update,,,0,False,,0.1516265912305517,0,0,0,,222.4
+incorrect_attribute_value,Incorrect / Object Attribute Value,hard,llm,1,True,1,18,20,0,139,,,,1,1,llm,update,,,0,False,,9.003001000333445,0,0,0,,223.5
+incorrect_attribute_value,Incorrect / Object Attribute Value,hard,llm,2,True,1,18,20,0,139,,,,1,1,llm,update,,,0,False,,0.1516265912305517,0,0,0,,222.9
+incorrect_attribute_value,Incorrect / Object Attribute Value,hard,llm,3,True,1,18,20,0,139,,,,1,1,llm,update,,,0,False,,9.003001000333445,0,0,0,,211.2
+incorrect_attribute_value,Incorrect / Object Attribute Value,hard,llm,4,True,1,18,20,0,139,,,,1,1,llm,update,,,0,False,,0.1516265912305517,0,0,0,,222.0
+incorrect_attribute_value,Incorrect / Object Attribute Value,hard,llm,5,True,1,17,20,0,139,,,,1,1,llm,update,,,0,False,,9.003001000333445,0,0,0,,221.7
+incorrect_attribute_value,Incorrect / Object Attribute Value,hard,llm,6,True,1,18,20,0,139,,,,1,1,llm,update,,,0,False,,9.003001000333445,0,0,0,,218.1
+incorrect_attribute_value,Incorrect / Object Attribute Value,hard,llm,7,True,1,18,20,0,139,,,,1,1,llm,update,,,0,False,,0.1516265912305517,0,0,0,,224.7
+incorrect_attribute_value,Incorrect / Object Attribute Value,hard,llm,8,True,1,16,20,0,139,,,,1,1,llm,update,,,0,False,,0.6668889629876628,0,0,0,,221.5
+incorrect_attribute_value,Incorrect / Object Attribute Value,hard,llm,9,True,1,17,20,0,139,,,,1,1,llm,update,,,0,False,,0.1516265912305517,0,0,0,,212.8
+duplicate_o2o_relations,Incorrect / Object-to-Object,easy,rule,0,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_o2o_relations,Incorrect / Object-to-Object,easy,rule,1,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_o2o_relations,Incorrect / Object-to-Object,easy,rule,2,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.4
+duplicate_o2o_relations,Incorrect / Object-to-Object,easy,rule,3,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.5
+duplicate_o2o_relations,Incorrect / Object-to-Object,easy,rule,4,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.4
+duplicate_o2o_relations,Incorrect / Object-to-Object,easy,rule,5,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.3
+duplicate_o2o_relations,Incorrect / Object-to-Object,easy,rule,6,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_o2o_relations,Incorrect / Object-to-Object,easy,rule,7,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_o2o_relations,Incorrect / Object-to-Object,easy,rule,8,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_o2o_relations,Incorrect / Object-to-Object,easy,rule,9,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_o2o_relations,Incorrect / Object-to-Object,hard,rule,0,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_o2o_relations,Incorrect / Object-to-Object,hard,rule,1,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_o2o_relations,Incorrect / Object-to-Object,hard,rule,2,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_o2o_relations,Incorrect / Object-to-Object,hard,rule,3,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_o2o_relations,Incorrect / Object-to-Object,hard,rule,4,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_o2o_relations,Incorrect / Object-to-Object,hard,rule,5,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_o2o_relations,Incorrect / Object-to-Object,hard,rule,6,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_o2o_relations,Incorrect / Object-to-Object,hard,rule,7,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_o2o_relations,Incorrect / Object-to-Object,hard,rule,8,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_o2o_relations,Incorrect / Object-to-Object,hard,rule,9,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+o2o_self_loop,Incorrect / Object-to-Object,easy,rule,0,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.1
+o2o_self_loop,Incorrect / Object-to-Object,easy,rule,1,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.1
+o2o_self_loop,Incorrect / Object-to-Object,easy,rule,2,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.1
+o2o_self_loop,Incorrect / Object-to-Object,easy,rule,3,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.1
+o2o_self_loop,Incorrect / Object-to-Object,easy,rule,4,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.1
+o2o_self_loop,Incorrect / Object-to-Object,easy,rule,5,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.1
+o2o_self_loop,Incorrect / Object-to-Object,easy,rule,6,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.2
+o2o_self_loop,Incorrect / Object-to-Object,easy,rule,7,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.2
+o2o_self_loop,Incorrect / Object-to-Object,easy,rule,8,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.2
+o2o_self_loop,Incorrect / Object-to-Object,easy,rule,9,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.2
+o2o_self_loop,Incorrect / Object-to-Object,hard,rule,0,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.2
+o2o_self_loop,Incorrect / Object-to-Object,hard,rule,1,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.2
+o2o_self_loop,Incorrect / Object-to-Object,hard,rule,2,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.2
+o2o_self_loop,Incorrect / Object-to-Object,hard,rule,3,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.2
+o2o_self_loop,Incorrect / Object-to-Object,hard,rule,4,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.2
+o2o_self_loop,Incorrect / Object-to-Object,hard,rule,5,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.2
+o2o_self_loop,Incorrect / Object-to-Object,hard,rule,6,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.2
+o2o_self_loop,Incorrect / Object-to-Object,hard,rule,7,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.2
+o2o_self_loop,Incorrect / Object-to-Object,hard,rule,8,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.3
+o2o_self_loop,Incorrect / Object-to-Object,hard,rule,9,True,1,,,,,,,,1,1,rule,delete_all,,,0,True,,,0,0,0,,3.2
+duplicate_e2o_relations,Incorrect / Event-to-Object,easy,rule,0,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_e2o_relations,Incorrect / Event-to-Object,easy,rule,1,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_e2o_relations,Incorrect / Event-to-Object,easy,rule,2,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_e2o_relations,Incorrect / Event-to-Object,easy,rule,3,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_e2o_relations,Incorrect / Event-to-Object,easy,rule,4,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.4
+duplicate_e2o_relations,Incorrect / Event-to-Object,easy,rule,5,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.5
+duplicate_e2o_relations,Incorrect / Event-to-Object,easy,rule,6,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.4
+duplicate_e2o_relations,Incorrect / Event-to-Object,easy,rule,7,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_e2o_relations,Incorrect / Event-to-Object,easy,rule,8,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_e2o_relations,Incorrect / Event-to-Object,easy,rule,9,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_e2o_relations,Incorrect / Event-to-Object,hard,rule,0,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_e2o_relations,Incorrect / Event-to-Object,hard,rule,1,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_e2o_relations,Incorrect / Event-to-Object,hard,rule,2,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_e2o_relations,Incorrect / Event-to-Object,hard,rule,3,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.1
+duplicate_e2o_relations,Incorrect / Event-to-Object,hard,rule,4,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_e2o_relations,Incorrect / Event-to-Object,hard,rule,5,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_e2o_relations,Incorrect / Event-to-Object,hard,rule,6,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_e2o_relations,Incorrect / Event-to-Object,hard,rule,7,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_e2o_relations,Incorrect / Event-to-Object,hard,rule,8,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2
+duplicate_e2o_relations,Incorrect / Event-to-Object,hard,rule,9,True,1,,,,,,,,1,1,rule,delete,,,0,True,,,0,0,0,,3.2

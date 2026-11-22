@@ -301,8 +301,6 @@ class Run:
         self.kinds: list[str] = []
         self.sources: list[str] = []
         self.noops: list[str] = []
-        self.verdicts: list[dict] = []  # every LLM detection verdict, for verdicts.jsonl
-        self.actions: list[dict] = []   # every suggested repair, for actions.jsonl
 
     def execute(self, workdir: Path) -> dict:
         t0 = time.time()
@@ -357,7 +355,6 @@ class Run:
             return False
         self.kinds.append(prefix + action["kind"])
         self.sources.append(action.get("source", "llm"))
-        self.actions.append({"issue_key": issue_key, "followup": bool(key), **action})
         if action["kind"] == "noop":
             self.noops.append(str(action.get("rationale", ""))[:150])
             return False
@@ -414,13 +411,6 @@ class Run:
         self.rec["issue_rows"] = 1
         verdicts = detect_all_with_llm(sc.issue_key, [target, *distractors], db)
         self.rec["timeouts"] += sum(1 for _, v in verdicts if _timed_out(v.rationale))
-        for i, (cand, v) in enumerate(verdicts):
-            self.verdicts.append({
-                "injected": i == 0,
-                "candidate": {k: x for k, x in cand.items() if not k.startswith("_")},
-                "flagged": v.flagged, "invalid": _invalid(v), "confidence": v.confidence,
-                "rationale": v.rationale, "suggestion": v.suggested_value,
-            })
         # A failed LLM call is not a "not flagged" verdict: scoring it would
         # count a lost connection as a miss and shrink the false alarms.
         failed = [v.rationale for _, v in verdicts if v.rationale.startswith("detection failed")]
@@ -705,40 +695,6 @@ def render_report(meta: dict, records: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_scenarios(scenarios: list[Scenario]) -> str:
-    """Every scenario's injector docstring: the easy/hard descriptions as
-    they were in the code that produced the numbers."""
-    lines = ["# Injected issues", "", "| Issue | Diff. | Injector | Description |",
-             "|---|---|---|---|"]
-    for sc in scenarios:
-        doc = " ".join((sc.inject.__doc__ or "").split())
-        lines.append(f"| `{sc.issue_key}` | {sc.difficulty} | `{sc.inject.__name__}` | {doc} |")
-    return "\n".join(lines) + "\n"
-
-
-def render_latex(records: list[dict]) -> str:
-    by_sc: dict[tuple, list[dict]] = {}
-    for r in records:
-        by_sc.setdefault((r["cell"], r["issue_key"], r["difficulty"], r["detection"]), []).append(r)
-    out = [
-        r"\begin{tabular}{llllrr}",
-        r"\toprule",
-        r"Cell & Issue & Diff. & Det. & Detected & Strict \\",
-        r"\midrule",
-    ]
-    for (cell, key, diff, det), rs in sorted(by_sc.items()):
-        ok = [r for r in rs if not r["error"] and r["detected"] != "invalid"]
-        n = len(ok)
-        pct = lambda f: f"{100 * sum(_true(r[f]) for r in ok) / n:.0f}\\%" if n else "--"
-        detected = pct("detected") if det == "llm" else "--"
-        out.append(
-            f"{cell} & \\texttt{{{key.replace('_', chr(92) + '_')}}} & {diff} & {det} & "
-            f"{detected} & {pct('strict')} \\\\"
-        )
-    out += [r"\bottomrule", r"\end{tabular}"]
-    return "\n".join(out) + "\n"
-
-
 # --- main ----------------------------------------------------------------------------
 
 def _git_state() -> tuple[str, bool]:
@@ -774,15 +730,6 @@ def _llm_back(minutes: float) -> bool:
     return True
 
 
-def _write_jsonl(fh, run: Run) -> None:
-    for kind, items in (("verdict", run.verdicts), ("action", run.actions)):
-        for item in items:
-            fh[kind].write(json.dumps(
-                {"scenario": run.sc.name, "run": run.run, **item}, default=str
-            ) + "\n")
-        fh[kind].flush()
-
-
 def evaluate(args, out_dir: Path) -> list[dict]:
     """Run every selected scenario. With `args.wait_minutes`, a run that
     failed while the LLM server was unreachable is repeated once it is back;
@@ -795,8 +742,6 @@ def evaluate(args, out_dir: Path) -> list[dict]:
     scenarios = select(args.only, getattr(args, "baseline", None))
     records: list[dict] = []
     with (out_dir / "runs.csv").open("w", newline="", encoding="utf-8") as fh, \
-            (out_dir / "verdicts.jsonl").open("w", encoding="utf-8") as vf, \
-            (out_dir / "actions.jsonl").open("w", encoding="utf-8") as af, \
             tempfile.TemporaryDirectory() as tmp:
         writer = csv.DictWriter(fh, fieldnames=CSV_FIELDS)
         writer.writeheader()
@@ -816,7 +761,6 @@ def evaluate(args, out_dir: Path) -> list[dict]:
                         return records
                     r = Run(sc, run, args, clean_snap, clean_rows)
                     rec = r.execute(Path(tmp))
-                _write_jsonl({"verdict": vf, "action": af}, r)
                 records.append(rec)
                 writer.writerow(rec)
                 fh.flush()
@@ -900,9 +844,6 @@ def main() -> None:
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     report = render_report(meta, records)
     (out_dir / "report.md").write_text(report, encoding="utf-8")
-    (out_dir / "table.tex").write_text(render_latex(records), encoding="utf-8")
-    (out_dir / "scenarios.md").write_text(
-        render_scenarios(select(args.only, args.baseline)), encoding="utf-8")
     print(report, flush=True)
 
 
