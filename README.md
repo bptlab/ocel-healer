@@ -224,7 +224,16 @@ The evaluation is built from `data/synthetic/order-management-baseline.sqlite` a
 | `ministral-3:14b` | [`ministral-3-14b/report.md`](evaluation_results/synthetic/ministral-3-14b/report.md) |
 | `phi4:14b` | [`phi4-14b/report.md`](evaluation_results/synthetic/phi4-14b/report.md) |
 
-With `ministral-3:14b`, one run of `incorrect_object_type/easy` failed with a reproducible model error and is left out, so that cell has 9 runs. The evaluation on the real-world logs is pending and will be added to `evaluation_results/real_world/`.
+With `ministral-3:14b`, one run of `incorrect_object_type/easy` failed with a reproducible model error and is left out, so that cell has 9 runs.
+
+### Real-world evaluation
+
+```bash
+python -m src.evaluation.evaluate_real_world                      # all logs in data/real-world/
+python -m src.evaluation.evaluate_real_world --only blockchain
+```
+
+Runs the rule-based detectors on every real-world log and counts the rows each one reports. The real-world logs have no ground truth, so these are counts only, not precision or recall. No LLM is used, nothing is repaired, and the logs are opened read-only. [`evaluation_results/real_world/`](evaluation_results/real_world/) holds one `<log>.md` per log with its size (rows per table, number of types), the count per detector grouped like the dashboard overview, and the detection runtime.
 
 ## Data
 
