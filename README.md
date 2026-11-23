@@ -27,7 +27,7 @@ You can connect any model served by [Ollama](https://ollama.com), on this machin
 
 ## A short tour
 
-The screenshots below follow one issue through the dashboard, on the bundled synthetic log `data/synthetic/order-management-corrupted.sqlite` with the model `qwen2.5:7b`.
+The screenshots below follow one issue through the dashboard, on the bundled synthetic log `data/synthetic/order-management-corrupted.sqlite` with the model `ministral-3:14b`.
 
 **1. Open a log.** The dashboard shows a few log statistics and the *Issue Overview*: the number of detected issues per category (missing or incorrect data) and per element of the log (events, objects, relations). Red numbers are issues the rule-based detectors found. A yellow **?** marks an LLM-based check that has not been run on this log yet.
 
@@ -35,11 +35,11 @@ The screenshots below follow one issue through the dashboard, on the bundled syn
 
 **2. Examine the log once.** *Run examination* profiles the log and asks the LLM to describe it. The report is saved next to the log and gives the LLM steps context such as the process, the object types and typical values.
 
-![The Examination section with the report expanded: the LLM describes the log as an order fulfilment process and lists object types, events and qualifiers](docs/images/02-exploration.png)
+![The Examination section with the report expanded: the LLM describes the log as an order fulfilment and inventory management process and describes object types, events and qualifiers](docs/images/02-examination.png)
 
 **3. Drill into an issue and ask for a repair.** Clicking *Missing Data / Event Type* lists three events without a type. For the first one, *Ask domain expert* proposes the type `confirm order`. It explains why, based on the event id and the order the event is linked to, and gives its confidence.
 
-![Drill-in for Missing Event Type: three events with an empty type, and a repair proposal setting the first one to "confirm order" with confidence 0.90](docs/images/03-drill-in-and-proposal.png)
+![Drill-in for Missing Event Type: three events with an empty type, and a repair proposal setting the first one to "confirm order" with confidence 0.98](docs/images/03-drill-in-and-proposal.png)
 
 **4. Check the change, then apply it.** With *Dry run* on, *Apply* only shows the SQL it would run. Switch *Dry run* off and press *Apply* again to write the change to the log.
 
@@ -256,7 +256,7 @@ All logs are OCEL 2.0 SQLite files, stored with Git LFS. They are datasets publi
 ² Source of the underlying data: Deutscher Bundestag/Bundesrat – DIP.<br>
 ³ The authors do not state a license for this dataset. Contact them before reusing it outside this repository.
 
-**Changes to the published files.** `order-management-corrupted.sqlite` contains injected issues. The real-world logs other than `age-of-empires.sqlite` are not byte-identical to the published files: they were converted to OCEL 2.0 SQLite or exported from a different version, so object and event counts can differ from the numbers given by the authors.
+**Changes to the published files.** `order-management-corrupted.sqlite` is a fixed demo snapshot with injected issues; the screenshots refer to it. The corruption generator is meant for experiments, and its output can differ from the snapshot as the injectors evolve. With `level="all"` it overwrites the snapshot; restore it with `git checkout -- data/synthetic/order-management-corrupted.sqlite`. The real-world logs other than `age-of-empires.sqlite` are not byte-identical to the published files: they were converted to OCEL 2.0 SQLite or exported from a different version, so object and event counts can differ from the numbers given by the authors.
 
 **Using your own log:** put any OCEL 2.0 SQLite file (`.sqlite`) anywhere under `data/` and it appears in the dashboard's *OCEL File* dropdown. Logs in other formats (JSON/XML) can be converted with [pm4py](https://processintelligence.solutions/pm4py) (`pm4py.read_ocel2(...)` followed by `pm4py.write_ocel2(..., "log.sqlite")`). pm4py is not a dependency of OCEL Healer; install it separately with `pip install pm4py` (it is licensed under AGPL-3.0).
 
