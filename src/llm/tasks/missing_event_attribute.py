@@ -28,9 +28,13 @@ from src.detection.error_detection import (
 from src.llm.actions import ActionResult
 from src.llm.schemas import SuggestedAttributesOutput
 from src.llm.tasks._base import DetectionResult, DetectionTask
+from src.llm.tasks.missing_object_attribute import MIN_SUGGESTION_CONFIDENCE
 
 
 class MissingEventAttribute(DetectionTask):
+    # The finding names the missing attribute, which is also where the fix
+    # goes: one prompt, no separate repair call.
+    SEPARATE_REPAIR = False
     issue_key = "missing_event_attribute"
     family = "attribute"
     kind = "event"
@@ -101,43 +105,39 @@ class MissingEventAttribute(DetectionTask):
         1. Read `current_type.declared_attributes` first. Any attribute you
            suggest MUST NOT be in that list (case-insensitively).
         2. Compare against `peer_event_types`. Attributes shared by most
-           peer events (e.g. `user_id`, `location`, `duration`) that this
-           type lacks are strong candidates.
-        3. Cross-reference the event type's NAME/activity for domain hints:
-           a "Ship …" event without `carrier` or `tracking_number`, a
-           "Pay …" event without `amount` or `payment_method`, a
-           "Approve …" event without an approver id.
+           peer event types that this type lacks are strong candidates.
+        3. Cross-reference the event type's NAME/activity: an activity that
+           cannot happen without a value (an approval without an approver)
+           is a candidate.
         4. Do NOT propose reserved / structural columns
            (`ocel_id`, `ocel_type`, `ocel_time`, anything with an `ocel_`
            prefix — `ocel_time` is the canonical timestamp).
-        5. Prefer AT MOST 5 suggestions. Return an empty list when
-           nothing plausibly belongs.
+        5. Suggest only what this log gives evidence for: peer event types
+           declare it, or the activity cannot happen without it. Generic
+           bookkeeping fields are not evidence. Most types are complete —
+           return an empty list unless you are confident (≥ 0.7); weaker
+           suggestions are discarded. At most 5 suggestions.
         6. For each suggestion set `affinity` to a SQLite storage class
            (`TEXT`, `INTEGER`, `REAL`, or `BLOB`). Default to `TEXT`.
     """
 
     EXAMPLES = """
-        current_type = {ocel_type: 'Ship Order',
-                        declared_attributes: ['warehouse']}
-        peer_event_types = {'Pay Order': ['amount', 'method'],
-                            'Place Order': ['channel']}
+        current_type = {ocel_type: 'E3',
+                        declared_attributes: []}
+        peer_event_types = {'E1': ['attr_x'], 'E2': ['attr_x'], 'E4': ['attr_x', 'attr_y']}
         → {"suggested_attributes": [
-             {"name": "tracking_number",
-              "rationale": "Shipping events normally record a carrier tracking id; not present.",
-              "confidence": 0.85,
-              "affinity": "TEXT"},
-             {"name": "carrier",
-              "rationale": "Peer 'Pay Order' records 'method'; the shipping counterpart is the carrier.",
-              "confidence": 0.75,
+             {"name": "attr_x",
+              "rationale": "every peer event type records attr_x; E3 does not",
+              "confidence": 0.8,
               "affinity": "TEXT"}],
-           "rationale": "Two shipping-specific fields look plausibly missing.",
+           "rationale": "one attribute shared by all peers is absent",
            "confidence": 0.8}
 
-        current_type = {ocel_type: 'Complete',
-                        declared_attributes: ['user_id']}
-        peer_event_types = {'Start': ['user_id']}
+        current_type = {ocel_type: 'E5',
+                        declared_attributes: ['attr_x']}
+        peer_event_types = {'E6': ['attr_x']}
         → {"suggested_attributes": [],
-           "rationale": "Symmetric with peer 'Start'; no obvious omission.",
+           "rationale": "symmetric with peer 'E6'; no obvious omission",
            "confidence": 0.85}
     """
 
@@ -157,6 +157,8 @@ class MissingEventAttribute(DetectionTask):
             if not name or name.lower() in declared_lc:
                 continue
             if name.lower().startswith("ocel_"):
+                continue
+            if float(item.get("confidence") or 0.0) < MIN_SUGGESTION_CONFIDENCE:
                 continue
             clean.append({
                 "name": name,

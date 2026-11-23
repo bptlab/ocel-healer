@@ -49,15 +49,21 @@ class CoercedValueOutput(TaskOutput):
     coerced_value: Any = None
 
 
+class ViolationVerdictOutput(TaskOutput):
+    """Detection verdict of the LLM-detected issues: only whether the row is
+    wrong. The corrected value is asked for in a separate repair call."""
+
+    is_violation: bool
+
+
 class ImplausibleValueOutput(TaskOutput):
     """incorrect_attribute_value (LLM detection task).
 
     The value passed the rule-based datatype check but may be semantically
     implausible for its attribute (e.g. negative price, out-of-vocab enum,
-    impossible date). `suggested_value` is null when the value looks
-    plausible — the row is not flagged. When non-null it must differ from
-    the current value; the same suggested value flags the row and doubles
-    as the coercion target for the fix path.
+    impossible date). Detection only judges that (`ViolationVerdictOutput`);
+    this is the repair's answer: the corrected value, or null when none can
+    be inferred. It must differ from the current value.
     """
 
     suggested_value: Any = None
@@ -103,6 +109,8 @@ class DuplicateResolutionOutput(TaskOutput):
 
     canonical_id: str
     ids_to_delete: list[str] = Field(default_factory=list)
+    # The surviving `ocel_type` when the duplicates disagree on type.
+    canonical_type: str | None = None
 
 
 class InferredTimestampOutput(TaskOutput):

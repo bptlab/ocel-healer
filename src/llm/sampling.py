@@ -16,6 +16,7 @@ builders. Two guarantees:
 
 from __future__ import annotations
 
+import difflib
 import sqlite3
 from typing import Any
 
@@ -244,4 +245,88 @@ def _id_prefix(ocel_id: str) -> str:
     return ""
 
 
-__all__ = ["sample_peers", "sample_candidates"]
+def column_summary(
+    conn: sqlite3.Connection,
+    *,
+    anchor_id: str,
+    anchor_type: str | None,
+    column: str,
+    kind: str = "object",
+) -> dict[str, Any] | None:
+    """What a column looks like across all other elements of the anchor's
+    type (initial-state rows only, the anchor left out): count, smallest,
+    median and largest value for numbers; the most common values for text.
+    A handful of sampled peers can make a normal value look like an
+    outlier; this shows the whole range."""
+    table = table_for_type(conn, anchor_type, kind=kind)
+    if not table or column not in [c for c, _ in _column_info(conn, table)]:
+        return None
+    cols = [r[1] for r in conn.execute(f"PRAGMA table_info({quote(table)})")]
+    where = ' AND "ocel_changed_field" IS NULL' if "ocel_changed_field" in cols else ""
+    values = [v for (v,) in conn.execute(
+        f"SELECT {quote(column)} FROM {quote(table)} WHERE ocel_id != ?{where} "
+        f"AND {quote(column)} IS NOT NULL", (anchor_id,))]
+    if not values:
+        return None
+    nums = sorted(v for v in values if isinstance(v, (int, float)) and not isinstance(v, bool))
+    if len(nums) == len(values):
+        return {"count": len(nums), "min": nums[0], "median": nums[len(nums) // 2], "max": nums[-1]}
+    common: dict[str, int] = {}
+    for v in values:
+        common[str(v)] = common.get(str(v), 0) + 1
+    top = sorted(common.items(), key=lambda kv: -kv[1])[:10]
+    return {"count": len(values), "distinct": len(common),
+            "most_common": [{"value": v, "count": n} for v, n in top]}
+
+
+def closest_ids(
+    conn: sqlite3.Connection,
+    dangling_id: str,
+    *,
+    kind: str = "object",
+    expected_type: str | None = None,
+    context_id: str | None = None,
+    k: int = 10,
+    cutoff: float = 0.6,
+) -> list[dict[str, Any]]:
+    """The `k` existing ids most similar to `dangling_id` (a reference that
+    doesn't resolve, often a typo), best first, as {ocel_id, ocel_type,
+    similarity}. `expected_type` (e.g. a qualifier) narrows the pool when it
+    names a known type. Ties are broken by similarity to `context_id` (the
+    relation's other end, e.g. event `e2_x-1001` for object `x-1001`), so
+    the intended id isn't cut off among many equally close ones."""
+    if kind not in ("object", "event"):
+        raise ValueError(f"kind must be 'object' or 'event', got {kind!r}")
+    known = {t.lower() for t, _ in _object_type_tables(conn)} if kind == "object" else set()
+    expected = _resolve_expected_type(expected_type, known)
+    sql = f"SELECT ocel_id, ocel_type FROM {kind}"
+    rows = conn.execute(
+        sql + " WHERE LOWER(ocel_type) = ?" if expected else sql,
+        (expected,) if expected else (),
+    ).fetchall()
+    types = {str(i): t for i, t in rows if i is not None}
+    needle = str(dangling_id)
+    matches = difflib.get_close_matches(needle, list(types), n=len(types), cutoff=cutoff)
+
+    def ratio(a: str, b: str) -> float:
+        return round(difflib.SequenceMatcher(None, a, b).ratio(), 3)
+
+    scored = [(m, ratio(needle, m)) for m in matches]
+    if context_id:
+        scored.sort(key=lambda ms: (-ms[1], -ratio(str(context_id), ms[0])))
+    return [
+        {"ocel_id": m, "ocel_type": types[m], "similarity": s} for m, s in scored[:k]
+    ]
+
+
+def clear_match(candidates: list[dict[str, Any]], *, min_similarity: float = 0.8,
+                margin: float = 0.05) -> str | None:
+    """The best candidate's id if it is close and clearly ahead of the rest."""
+    if not candidates or candidates[0]["similarity"] < min_similarity:
+        return None
+    if len(candidates) > 1 and candidates[0]["similarity"] - candidates[1]["similarity"] < margin:
+        return None
+    return candidates[0]["ocel_id"]
+
+
+__all__ = ["sample_peers", "sample_candidates", "closest_ids", "clear_match", "column_summary"]

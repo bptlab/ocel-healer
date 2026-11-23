@@ -2,6 +2,7 @@ from src.detection.error_detection import _event_type_tables
 from src.llm.actions import ActionResult
 from src.llm.schemas import InferredTypeOutput
 from src.llm.tasks._base import ResolutionTask
+from src.llm.tasks._event_context import event_type_order
 
 
 class MissingEventType(ResolutionTask):
@@ -29,44 +30,43 @@ class MissingEventType(ResolutionTask):
                                   qualifier under which the event
                                   references them
         - candidate_types         the closed list of valid event types
+        - event_type_order        the usual order of event types in this
+                                  log, learned from the data: list of
+                                  {event_type, position}, where position 0
+                                  means first in an object's lifecycle and
+                                  1 means last
     """
 
     METHOD = """
         1. Read `violation.ocel_id` first — many event ids embed the
-           activity keyword (e.g. `place order:990001`, `pay order:…`,
-           `confirm order:…`). An id keyword pins the type with high
-           confidence.
-        2. If the id is opaque, use `related_objects`:
-             - Qualifier `order` on an `orders` object → an order-
-               lifecycle event (place / confirm / pay).
-             - Qualifier `packer` on a `packages` object → `create package`
-               or `send package`.
-             - Qualifier `shipper` on a `packages` object → `send package`
-               (delivery-adjacent).
-             - Qualifier `item` on an `items` object → `pick item` or
-               related item events.
-        3. When `event.ocel_time` is known and the same-object lifecycle
-           has other timestamped events, prefer a type whose typical
-           position in the lifecycle matches the anchor's time.
+           activity keyword (e.g. `E2:1001` or `e2_x-1001` for an `E2`
+           event). An id keyword pins the type with high confidence.
+        2. If the id is opaque, use `related_objects`: the types of the
+           touched objects and the qualifiers under which they are
+           referenced narrow the event type to those activities that
+           involve such objects in such roles.
+        3. When `event.ocel_time` is known, prefer a type whose position in
+           `event_type_order` fits where the anchor's time falls among the
+           touched objects' other events.
         4. Return exactly one value from `candidate_types` (canonical
            casing). Never return NULL — this task always guesses.
     """
 
     EXAMPLES = """
-        violation.ocel_id = 'confirm order:990400'
-        related_objects = [{ocel_type: 'orders', qualifier: 'order'}]
-        candidate_types = ['place order', 'confirm order', 'pay order', ...]
-        → {"inferred_type": "confirm order",
-           "rationale": "id embeds 'confirm order' and touches an orders object with qualifier 'order'",
+        violation.ocel_id = 'E2:1001'
+        related_objects = [{ocel_type: 'type A', qualifier: 'a'}]
+        candidate_types = ['E1', 'E2', 'E3', ...]
+        → {"inferred_type": "E2",
+           "rationale": "id embeds 'E2' and the touched type A object fits an E2 event",
            "confidence": 0.95}
 
-        violation.ocel_id = 'create_package:e-770001'
-        event.ocel_time = '2023-04-04 08:00:00'
-        related_objects = [{ocel_type: 'packages', qualifier: 'packer'}]
-        candidate_types = ['create package', 'send package', ...]
-        → {"inferred_type": "create package",
-           "rationale": "id embeds 'create_package' and qualifier 'packer' fits create over send",
-           "confidence": 0.9}
+        violation.ocel_id = 'ev-77'
+        event.ocel_time = '2020-01-02 08:00:00'
+        related_objects = [{ocel_type: 'type B', qualifier: 'q1'}]
+        candidate_types = ['E3', 'E4', ...]
+        → {"inferred_type": "E3",
+           "rationale": "id is opaque; qualifier 'q1' on a type B object fits E3, which precedes E4 in that object's lifecycle",
+           "confidence": 0.6}
     """
 
     def anchor(self, row: dict) -> tuple[str | None, str | None]:
@@ -76,6 +76,7 @@ class MissingEventType(ResolutionTask):
     def build_context(self, conn, row, *, use_hints=True):
         ctx: dict = {"issue_key": self.issue_key, "violation": dict(row)}
         ctx["candidate_types"] = [t for t, _ in _event_type_tables(conn)]
+        ctx["event_type_order"] = event_type_order(conn)
 
         event_id = row.get("ocel_id")
         if event_id:

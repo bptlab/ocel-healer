@@ -1,5 +1,6 @@
 from src.llm.actions import event_attribute_target
 from src.llm.schemas import ImplausibleValueOutput
+from src.llm.sampling import column_summary
 from src.llm.tasks._base import DetectionResult, DetectionTask
 
 
@@ -22,14 +23,48 @@ class IncorrectEventAttributeValue(DetectionTask):
     kind = "event"
     OutputModel = ImplausibleValueOutput
 
+    DETECT_TASK = """
+        A row has an attribute value with the right SQL type and no NULL, but the
+        value itself may be semantically wrong for the attribute. Decide only
+        WHETHER it is wrong, given the attribute's name / meaning and the peer
+        distribution. Do not propose a corrected value: that is a separate step.
+    """
+
+    DETECT_METHOD = """
+        1. Read the attribute name (and the anchor's other attributes, if
+           given) to infer what the column records.
+        2. Compare `actual_value` against `peer_objects[*][attribute]` and
+           `peer_summary` (the column's full range). A value that matches the peers' shape (sign, magnitude, vocabulary, casing,
+           length) is plausible even when unusual.
+        3. `is_violation: true` when the value contradicts the attribute's
+           meaning — even if you can't tell the right value:
+             - a sign no peer has (a negative value where every peer is positive),
+             - a value outside a closed peer vocabulary,
+             - text with a clearly different convention (a machine id where
+               every peer has a human name),
+             - a date that cannot correspond to what the column records,
+             - a value orders of magnitude off from every peer.
+        4. `is_violation: false` when the value looks fine or merely unusual,
+           when peers are absent, or when the attribute's meaning is unclear.
+    """
+
+    DETECT_EXAMPLES = """
+        violation = {attribute: 'attr_y', actual_value: -7.0, expected_type: 'REAL'}
+        peer_objects = [{attr_y: 6.5}, {attr_y: 7.0}, {attr_y: 8.25}]
+        → {"is_violation": true,
+           "rationale": "every peer value of attr_y is positive; a negative value contradicts the attribute",
+           "confidence": 0.9}
+
+        violation = {attribute: 'attr_z', actual_value: 3, expected_type: 'INTEGER'}
+        peer_objects = [{attr_z: 1}, {attr_z: 5}, {attr_z: 2}]
+        → {"is_violation": false,
+           "rationale": "3 matches the peer distribution's shape",
+           "confidence": 0.95}
+    """
+
     TASK = """
-        An event row has an attribute value with the right SQL type and
-        no NULL, but the value itself may be semantically wrong for the
-        attribute. Decide whether the value is plausible given the
-        attribute's name / meaning and the peer distribution. Flag only
-        when the evidence is specific — a value that contradicts what
-        the attribute records — and return null when the value looks
-        fine or is merely unusual.
+        This attribute value has been judged semantically wrong. Propose the
+        corrected value from the attribute's meaning and the peer distribution.
     """
 
     INPUTS = """
@@ -38,47 +73,41 @@ class IncorrectEventAttributeValue(DetectionTask):
         - violation.attribute      the attribute (column) name being checked
         - violation.expected_type  the column's SQL affinity (already satisfied)
         - violation.actual_value   the value currently in the cell
-        - peer_objects             up to 5 peer events of the same type
+        - peer_objects             up to 20 peer events of the same type
                                    with their values for this attribute
                                    — the reference cohort. (The context
                                    builder reuses the object-side
                                    ``peer_objects`` slot; the peers here
                                    are events, keyed by their event type.)
+        - peer_summary             the column across ALL other elements of this
+                                   type: count, min, median, max for numbers;
+                                   the most common values for text
     """
 
     METHOD = """
-        1. Read the attribute name to infer what the column records (an
-           activity label, a commit message, an amount, a status enum).
-        2. Compare `actual_value` against `peer_objects[*][attribute]`.
-           A value that matches the peer distribution's shape (casing,
-           length, vocabulary, magnitude) is plausible even when unusual.
-        3. Flag ONLY when the value contradicts the attribute's meaning:
-             - a magnitude with the wrong sign or scale,
-             - a value outside a closed peer vocabulary,
-             - text with a clearly-different convention (all caps in a
-               camel-case column, machine ids where every peer has a
-               human name),
-             - a date / timestamp incompatible with the log's window.
-        4. Default to `suggested_value: null` whenever peers are absent
-           or the attribute's semantics are unclear from the name alone.
-        5. When flagging, propose the corrected value in `suggested_value`.
-           It must match `expected_type`'s affinity and must differ from
-           `actual_value` (returning the current value is equivalent to
-           null).
+        1. Read the attribute name (and the anchor's other attributes, if
+           given) to infer what the column records.
+        2. Use `peer_objects[*][attribute]` and `peer_summary` for the value's
+           shape, unit, format and range; when the wrong value is an obvious distortion of a right one
+           (a flipped sign, a shifted magnitude), undo the distortion.
+        3. The value must match `expected_type`'s affinity and differ from
+           `actual_value`.
+        4. Return `suggested_value: null` only when nothing in the context
+           points to a value.
     """
 
     EXAMPLES = """
-        violation = {attribute: 'author_name', actual_value: 'x7f2b91c', expected_type: 'TEXT'}
-        peer_objects = [{author_name: 'Ada Lovelace'}, {author_name: 'Grace Hopper'}]
-        → {"suggested_value": null,
-           "rationale": "'x7f2b91c' looks like a machine hash rather than a person name, but the correct name is not inferable from context",
-           "confidence": 0.3}
+        violation = {attribute: 'attr_y', actual_value: -7.0, expected_type: 'REAL'}
+        peer_objects = [{attr_y: 6.5}, {attr_y: 7.0}, {attr_y: 8.25}]
+        → {"suggested_value": 7.0,
+           "rationale": "the value is a sign-flipped 7.0, which matches the peers",
+           "confidence": 0.8}
 
-        violation = {attribute: 'amount', actual_value: -50.0, expected_type: 'REAL'}
-        peer_objects = [{amount: 12.5}, {amount: 8.0}, {amount: 24.99}]
-        → {"suggested_value": 50.0,
-           "rationale": "amounts in the peer cohort are positive; negative amount contradicts the attribute's meaning",
-           "confidence": 0.9}
+        violation = {attribute: 'attr_w', actual_value: 'K9', expected_type: 'TEXT'}
+        peer_objects = [{attr_w: 'A1'}, {attr_w: 'B2'}, {attr_w: 'C3'}]
+        → {"suggested_value": null,
+           "rationale": "'K9' is outside the peer vocabulary but nothing points to the right value",
+           "confidence": 0.3}
     """
 
     def extend_context(self, conn, ctx: dict, row: dict) -> None:
@@ -86,14 +115,19 @@ class IncorrectEventAttributeValue(DetectionTask):
         # `kind = "event"` routes peer sampling through the event-type
         # table rather than the object-type table.
         target = row.get("attribute_name") or row.get("attribute")
-        self._attach_peers(conn, ctx, row, target_col=target)
+        self._attach_peers(conn, ctx, row, target_col=target, k=20)
+        anchor_id, anchor_type = self.anchor(row)
+        summary = column_summary(conn, anchor_id=anchor_id, anchor_type=anchor_type,
+                                 column=target, kind=self.kind) if anchor_id and target else None
+        if summary:
+            ctx["peer_summary"] = summary
 
     def anchor(self, row: dict) -> tuple[str | None, str | None]:
         # Anchor on the event: id + event_type. The base class' default
         # anchor() reads ``object_type``, which is absent from event rows.
         return (row.get("ocel_id"), row.get("event_type"))
 
-    def parse_detection(self, row: dict, payload: dict) -> DetectionResult:
+    def parse_repair(self, row: dict, payload: dict) -> DetectionResult:
         rationale = str(payload.get("rationale", "") or "").strip()
         confidence = float(payload.get("confidence", 0.0) or 0.0)
         suggested = payload.get("suggested_value")

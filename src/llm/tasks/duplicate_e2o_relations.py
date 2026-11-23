@@ -41,6 +41,10 @@ class DuplicateE2ORelations(ResolutionTask):
         # ocel_object_id, which is fine but not used by parse_payload.
         return row.get("ocel_object_id"), None
 
+    def rule_action(self, conn, row: dict) -> ActionResult:
+        """Deterministic; the LLM is never asked."""
+        return self.parse_payload(row, {})
+
     def parse_payload(self, row: dict, payload: dict) -> ActionResult:
         return ActionResult.delete(
             target_table="event_object",

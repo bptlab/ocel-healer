@@ -1,0 +1,31 @@
+{
+  "model": "ministral-3:14b",
+  "runs": 10,
+  "distractors": 20,
+  "seed": 0,
+  "eval_log": "rebuilt from the baseline",
+  "eval_log_sha256": "24a563f345deb82141dd183fe6153d57003d279829c72960329c61f6f44fca59",
+  "time_tolerance": "10:00:00",
+  "llm_timeout_s": 120.0,
+  "temperature": 0.5,
+  "min_confidence": 0.4,
+  "examination_hints": false,
+  "baseline": null,
+  "ollama_version": "0.40.11",
+  "model_digest": "4760c35aeb9d9e9c6174c2492562c0b999e80a222804fd96b1915ab72bbcdcf7",
+  "sqlite_version": "3.54.1",
+  "python_version": "3.14.5",
+  "platform": "macOS-15.7.9-arm64-arm-64bit-Mach-O",
+  "git_sha": "56c155732fce26a9c39793ef55753ed2bbcdab09",
+  "git_dirty": false,
+  "date": "2026-11-21 02:23",
+  "duration_s": 28374.8,
+  "stopped_early": false,
+  "clean_log_findings": {
+    "duplicate_objects_on_attributes": 123,
+    "duplicate_events_on_attributes": 2
+  },
+  "errors_kept": [
+    "incorrect_object_type/easy run 8: LLMFailure: 1/19 LLM detections failed: detection failed: HTTP Error 500: Internal Server Error: {\"error\":{\"message\":\"pr"
+  ]
+}

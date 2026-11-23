@@ -43,7 +43,7 @@ class MissingEventAttributeValue(ResolutionTask):
         1. Read `peer_objects` first — they fix the value's type, unit,
            casing, and format. Match them.
         2. Look at the anchor event's other attributes for correlations
-           (activity name → typical author, etc.).
+           (peers that share another attribute value often share this one).
         3. If `examination_hints` are present, follow them (see the
            object-side task for the full protocol).
         4. Never return null. If evidence is weak, still return your best
@@ -51,11 +51,11 @@ class MissingEventAttributeValue(ResolutionTask):
     """
 
     EXAMPLES = """
-        violation.attribute = 'author_name'
-        peer_objects = [{author_name: 'Ada Lovelace'}, {author_name: 'Grace Hopper'}]
-        event.attributes = {commit_message: 'fix typo in README'}
-        → {"inferred_value": "unknown",
-           "rationale": "peers have human names but this row's context is silent",
+        violation.attribute = 'attr_x'
+        peer_objects = [{attr_x: 'Jane Roe'}, {attr_x: 'John Doe'}]
+        event.attributes = {attr_y: 'note 12'}
+        → {"inferred_value": "Jane Roe",
+           "rationale": "peers carry person names but this row's context is silent; guessing the first peer's value",
            "confidence": 0.2}
     """
 

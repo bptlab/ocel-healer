@@ -13,11 +13,55 @@ class IncorrectObjectType(DetectionTask):
         # overview of ALL types and their id templates, not just its own slice.
         return {"all_object_types": all_type_summaries(profile, guide)}
 
-    TASK = """
+    DETECT_TASK = """
         An object row has a non-empty `ocel_type`, but that type may be incorrect.
-        Decide whether the current type is consistent with the object's id,
-        the events touching it, and its attribute row. Flag a mismatch only
-        when the evidence points to a different type; otherwise return null.
+        Decide only WHETHER the current type is wrong, given the object's id, the
+        events touching it, and its attribute row. Do not propose a replacement:
+        that is a separate step.
+    """
+
+    DETECT_METHOD = """
+        1. Compare the current `ocel_type` against these signals, most to least
+           informative:
+             - The `ocel_id`. An id keyword or prefix that names another type
+               (e.g. `typeB-124` currently typed `type A`) is STRONG on its own
+               — do NOT downgrade it to "weak" just because events and
+               attributes are sparse.
+             - If `examination_hints.all_object_types` is present, match the id
+               against each type's `id_template` (digit runs shown as `#`): an id
+               matching another type's template is strong evidence.
+             - Event activities + qualifiers: the qualifier names the role the
+               object plays (e.g. qualifier `b` on every event suggests `type B`).
+             - Attribute names / shapes: attributes that only another type
+               declares suggest that type.
+        2. `is_violation: true` when this evidence contradicts the current
+           type, even if you are not sure which type is right.
+        3. `is_violation: false` when the evidence is consistent with the current
+           type, or when the id is opaque AND events and attributes are absent or
+           neutral.
+    """
+
+    DETECT_EXAMPLES = """
+        violation = {ocel_id: 'X42', ocel_type: 'type A'}
+        events = [{activity: 'E1', qualifier: 'b'},
+                  {activity: 'E2', qualifier: 'b'}]
+        candidate_types = ['type A', 'type B', 'type C']
+        → {"is_violation": true,
+           "rationale": "both events reference this object under qualifier 'b', the role of a type B object, contradicting 'type A'",
+           "confidence": 0.9}
+
+        violation = {ocel_id: 'X7', ocel_type: 'type C'}
+        events = [{activity: 'E1', qualifier: 'c'}]
+        candidate_types = ['type A', 'type B', 'type C']
+        → {"is_violation": false,
+           "rationale": "the event qualifies this object as 'c', matching the current type",
+           "confidence": 0.95}
+    """
+
+    TASK = """
+        This object's `ocel_type` has been judged incorrect. Infer the correct
+        type from `candidate_types`, using the object's id, the events touching
+        it, and its attribute row.
     """
 
     INPUTS = """
@@ -30,56 +74,35 @@ class IncorrectObjectType(DetectionTask):
     """
 
     METHOD = """
-        1. Compare the current `ocel_type` against three signals, most to least
-           informative:
-             - The `ocel_id`. An id keyword (e.g. `customer`, `order`, `product`)
-               that contradicts the current type is STRONG on its own — do NOT
-               downgrade it to "weak" just because events and attributes are
-               sparse.
-             - If `examination_hints.all_object_types` is present, match the id
-               against each type's `id_template` (digit runs shown as `#`): an id
-               matching another type's template is strong evidence for that type.
-             - Event activities + qualifiers (e.g. `place_order` with qualifier
-               `customer` implies the object is a customer).
-             - Attribute names / shapes (`email`, `country` → customer;
-               `sku`, `price` → product).
-        2. If the evidence is consistent with the current type, return
-           `inferred_type: null`. Default to null only when the id is opaque
-           (UUID or numeric with no type keyword) AND events and attributes
-           are absent or neutral.
-        3. When the evidence contradicts the current type, return the one
-           value from `candidate_types` that best fits the evidence.
-        4. Never return the current `ocel_type` as `inferred_type` — if you
-           agree with it, return null.
+        1. Weigh the signals, most to least informative: the `ocel_id` (an id
+           keyword or prefix naming a type, or a matching `id_template` in
+           `examination_hints.all_object_types`), the qualifiers under which
+           events reference the object (the qualifier names its role), and its
+           attribute names.
+        2. Return the one value from `candidate_types` that best fits the
+           evidence. It must differ from the current `ocel_type`.
+        3. Return `inferred_type: null` only when no other candidate fits
+           better than the current type.
     """
 
     EXAMPLES = """
-        violation = {ocel_id: 'O42', ocel_type: 'product'}
-        events = [{activity: 'place_order', qualifier: 'customer'},
-                  {activity: 'ship_order', qualifier: 'customer'}]
-        object.attributes = {email: 'a@b.com', country: 'DE'}
-        candidate_types = ['customer', 'order', 'product']
-        → {"inferred_type": "customer",
-           "rationale": "qualifier 'customer' on both events plus email/country attributes contradict the current 'product' tag",
-           "confidence": 0.95}
+        violation = {ocel_id: 'X42', ocel_type: 'type A'}
+        events = [{activity: 'E1', qualifier: 'b'},
+                  {activity: 'E2', qualifier: 'b'}]
+        candidate_types = ['type A', 'type B', 'type C']
+        → {"inferred_type": "type B",
+           "rationale": "both events reference this object under qualifier 'b', the role of a type B object",
+           "confidence": 0.9}
 
-        violation = {ocel_id: 'O7', ocel_type: 'order'}
-        events = [{activity: 'place_order', qualifier: 'order'}]
-        candidate_types = ['customer', 'order', 'product']
-        → {"inferred_type": null,
-           "rationale": "events qualify this object as 'order', matching the current type",
-           "confidence": 0.95}
-
-        violation = {ocel_id: 'product124', ocel_type: 'order'}
+        violation = {ocel_id: 'typeB-124', ocel_type: 'type C'}
         events = []
-        object.attributes = {}
-        candidate_types = ['customer', 'order', 'product']
-        → {"inferred_type": "product",
-           "rationale": "ID 'product124' contains keyword 'product' which contradicts 'order'; no events or attributes but the id signal is sufficient",
+        candidate_types = ['type A', 'type B', 'type C']
+        → {"inferred_type": "type B",
+           "rationale": "id 'typeB-124' names type B",
            "confidence": 0.85}
     """
 
-    def parse_detection(self, row: dict, payload: dict) -> DetectionResult:
+    def parse_repair(self, row: dict, payload: dict) -> DetectionResult:
         rationale = str(payload.get("rationale", "") or "").strip()
         confidence = float(payload.get("confidence", 0.0) or 0.0)
         suggested = payload.get("inferred_type")

@@ -1,11 +1,28 @@
 from src.detection.error_detection import (
     _OCEL_RESERVED,
     _column_info,
+    _event_type_tables,
     _object_type_tables,
 )
 from src.llm.actions import ActionResult
 from src.llm.schemas import InferredObjectOutput
 from src.llm.tasks._base import ResolutionTask
+
+
+def first_linked_event_time(conn, object_id: str) -> str | None:
+    """Time of the earliest event linked to `object_id`: an object's initial
+    state is recorded when the first event touches it."""
+    times = [
+        r[0]
+        for _, table in _event_type_tables(conn)
+        for r in conn.execute(
+            f'SELECT MIN(ocel_time) FROM "{table}" WHERE ocel_id IN '
+            "(SELECT ocel_event_id FROM event_object WHERE ocel_object_id = ?)",
+            (object_id,),
+        )
+        if r[0] is not None
+    ]
+    return min(times, default=None)
 
 
 class MissingObject(ResolutionTask):
@@ -31,7 +48,8 @@ class MissingObject(ResolutionTask):
             format of the `peer_objects`. Empty when the type has no
             per-object attributes.
         The resolver will INSERT one row into `object` and one initial-state
-        row into `object_<Type>` from your answer.
+        row into `object_<Type>` from your answer, timed at the earliest
+        event linked to the object.
     """
 
     INPUTS = """
@@ -56,8 +74,8 @@ class MissingObject(ResolutionTask):
     METHOD = """
         1. `inferred_type_from_prefix` is usually correct. Only override it
            when the qualifier or the referring event's type contradicts it
-           (e.g. an id shaped like `orders:o-…` but referenced under
-           qualifier `product` from a `pick item` event is suspicious).
+           (e.g. an id shaped like `typeA:a-…` but referenced under the
+           qualifier of another type is suspicious).
         2. Use `peer_columns` as the exact key set for `attributes`. If
            `peer_columns` is empty, produce `attributes: {}`.
         3. For each attribute, produce a value in the same format, unit,
@@ -71,25 +89,25 @@ class MissingObject(ResolutionTask):
     """
 
     EXAMPLES = """
-        violation = {ocel_object_id: 'orders:o-991000',
-                     inferred_type_from_prefix: 'orders',
-                     ocel_qualifier: 'order'}
-        related_event = {ocel_id: 'place_order:990001', ocel_type: 'place order'}
-        peer_columns = ['price']
-        peer_objects = [{ocel_id: 'o-990001', price: 42.5}, ...]
-        → {"ocel_type": "orders",
-           "attributes": {"price": 42.5},
-           "rationale": "id prefix and qualifier both say 'orders'; matched price shape from peers",
+        violation = {ocel_object_id: 'a-1099',
+                     inferred_type_from_prefix: 'type A',
+                     ocel_qualifier: 'a'}
+        related_event = {ocel_id: 'ev-12', ocel_type: 'E1'}
+        peer_columns = ['attr_x']
+        peer_objects = [{ocel_id: 'a-1001', attr_x: 42.5}, ...]
+        → {"ocel_type": "type A",
+           "attributes": {"attr_x": 42.5},
+           "rationale": "id prefix and qualifier both say 'type A'; matched attr_x shape from peers",
            "confidence": 0.85}
 
-        violation = {ocel_object_id: 'products:Echo Show 10',
-                     inferred_type_from_prefix: 'products',
-                     ocel_qualifier: 'product'}
-        peer_columns = ['weight', 'price']
-        peer_objects = [{ocel_id: 'iPhone 8', weight: 0.148, price: 599.0}, ...]
-        → {"ocel_type": "products",
-           "attributes": {"weight": 0.3, "price": 199.0},
-           "rationale": "matched products' weight/price shape; picked mid-range values as no external signal",
+        violation = {ocel_object_id: 'Entity Name 7',
+                     inferred_type_from_prefix: 'type B',
+                     ocel_qualifier: 'b'}
+        peer_columns = ['attr_x', 'attr_y']
+        peer_objects = [{ocel_id: 'Entity Name 3', attr_x: 0.15, attr_y: 600.0}, ...]
+        → {"ocel_type": "type B",
+           "attributes": {"attr_x": 0.3, "attr_y": 200.0},
+           "rationale": "matched the peers' attr_x/attr_y shape; picked mid-range values as there is no external signal",
            "confidence": 0.4}
     """
 
@@ -101,6 +119,8 @@ class MissingObject(ResolutionTask):
     # the prefix guess (the prompt explicitly invites overrides).
     _TABLE_HINT_KEY = "_resolved_target_table"
     _TYPE_MAP_KEY = "_object_type_table_map"
+    _COLUMNS_KEY = "_object_type_columns"
+    _TIME_KEY = "_first_event_time"
 
     def anchor(self, row: dict) -> tuple[str | None, str | None]:
         return (
@@ -116,6 +136,10 @@ class MissingObject(ResolutionTask):
         # Full type→table map: parse_payload routes by the LLM's chosen type.
         type_map = {t: table for t, table in type_table_pairs}
         row[self._TYPE_MAP_KEY] = type_map
+        row[self._COLUMNS_KEY] = {
+            t: [c for c, _ in _column_info(conn, table)] for t, table in type_table_pairs
+        }
+        row[self._TIME_KEY] = first_linked_event_time(conn, row.get("ocel_object_id"))
 
         # Prefix-guessed sub-table drives peer_columns (matches the prompt
         # example the LLM sees). If the LLM overrides ocel_type, parse_payload
@@ -168,13 +192,18 @@ class MissingObject(ResolutionTask):
 
         anchor_id = row.get("ocel_object_id")
         attrs = payload.get("attributes") or {}
-        clean_attrs = {k: v for k, v in attrs.items() if k not in _OCEL_RESERVED}
+        # Only the chosen type's columns: a stray name would make the insert fail.
+        known = (row.get(self._COLUMNS_KEY) or {}).get(ocel_type)
+        clean_attrs = {
+            k: v for k, v in attrs.items()
+            if k not in _OCEL_RESERVED and (known is None or k in known)
+        }
 
         inserts = [
             {"table": "object", "columns": {"ocel_id": anchor_id, "ocel_type": ocel_type}},
             {"table": target_table, "columns": {
                 "ocel_id": anchor_id,
-                "ocel_time": None,
+                "ocel_time": row.get(self._TIME_KEY),
                 "ocel_changed_field": None,
                 **clean_attrs,
             }},

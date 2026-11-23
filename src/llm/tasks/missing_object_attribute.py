@@ -26,8 +26,15 @@ from src.llm.actions import ActionResult
 from src.llm.schemas import SuggestedAttributesOutput
 from src.llm.tasks._base import DetectionResult, DetectionTask
 
+# A suggestion is only a flag when the model is fairly sure: proposing
+# *something* for every type is easy, so a low-confidence idea is noise.
+MIN_SUGGESTION_CONFIDENCE = 0.7
+
 
 class MissingObjectAttribute(DetectionTask):
+    # The finding names the missing attribute, which is also where the fix
+    # goes: one prompt, no separate repair call.
+    SEPARATE_REPAIR = False
     issue_key = "missing_object_attribute"
     family = "attribute"
     kind = "object"
@@ -112,48 +119,44 @@ class MissingObjectAttribute(DetectionTask):
         1. Read `current_type.declared_attributes` first. Any attribute you
            suggest MUST NOT be in that list — case-insensitively.
         2. Compare against `peer_types`. Attributes that most peers have
-           and this type lacks are strong candidates (e.g. every entity type
-           has `created_at` but this one doesn't).
+           and this type lacks are strong candidates.
         3. Cross-reference `examination_hints.all_object_types[current_type].
-           represents` for the type's business meaning. An Order without a
-           monetary total, a Customer without contact info, a Product without
-           a price are canonical omissions.
+           represents` for the type's meaning: an attribute without which
+           such an entity cannot be described is a candidate.
         4. Do NOT propose reserved / structural columns
            (`ocel_id`, `ocel_type`, anything with an `ocel_` prefix).
         5. Do NOT propose columns that are just renames of existing ones
-           (e.g. `customer_id` when `customer_ref` is already declared).
-        6. Prefer AT MOST 5 suggestions. Fewer is better than noise. Return
-           an empty list when nothing plausibly belongs.
-        7. For each suggestion set `affinity` to a SQLite storage class
+           (e.g. `attr_x_id` when `attr_x_ref` is already declared).
+        6. Suggest only what this log gives evidence for: a closely related
+           peer type declares it, or the type's `represents` note makes it
+           indispensable. Generic bookkeeping fields (status, creation
+           time, contact details) are not evidence. Most types are
+           complete — return an empty list unless you are confident (≥ 0.7);
+           weaker suggestions are discarded.
+        7. Prefer AT MOST 5 suggestions. Fewer is better than noise.
+        8. For each suggestion set `affinity` to a SQLite storage class
            (`TEXT`, `INTEGER`, `REAL`, or `BLOB`). Default to `TEXT` when
            unsure — the fix path treats unknown affinities as TEXT anyway.
     """
 
     EXAMPLES = """
-        current_type = {ocel_type: 'order',
-                        declared_attributes: ['customer_ref', 'created_at']}
-        peer_types = {'product': ['sku', 'price', 'name'],
-                      'customer': ['email', 'country']}
-        examination_hints.all_object_types = {
-          'order': {represents: 'A purchase order placed by a customer'},
-          'product': {...}, 'customer': {...}}
+        current_type = {ocel_type: 'type A',
+                        declared_attributes: ['attr_x']}
+        peer_types = {'type B': ['attr_x', 'attr_y'],
+                      'type C': ['attr_x', 'attr_y', 'attr_z']}
         → {"suggested_attributes": [
-             {"name": "total_amount",
-              "rationale": "Orders carry a monetary total in every domain we've seen; peer 'product' declares 'price' but 'order' has no monetary field.",
-              "confidence": 0.9,
-              "affinity": "REAL"},
-             {"name": "status",
-              "rationale": "Orders progress through states (placed→shipped→delivered); no status column exists.",
-              "confidence": 0.7,
-              "affinity": "TEXT"}],
-           "rationale": "Two attributes look plausibly missing; skipped a third candidate because it may duplicate 'customer_ref'.",
-           "confidence": 0.85}
+             {"name": "attr_y",
+              "rationale": "every peer type declares attr_y next to attr_x; type A declares attr_x but not attr_y",
+              "confidence": 0.8,
+              "affinity": "REAL"}],
+           "rationale": "one attribute shared by all peers is absent",
+           "confidence": 0.8}
 
-        current_type = {ocel_type: 'product',
-                        declared_attributes: ['sku', 'name', 'price', 'weight']}
+        current_type = {ocel_type: 'type C',
+                        declared_attributes: ['attr_x', 'attr_y', 'attr_z']}
         peer_types = {...}
         → {"suggested_attributes": [],
-           "rationale": "Product schema already carries identifier, label, monetary value and physical property — no obvious omission.",
+           "rationale": "type C already declares every attribute its peers use — no obvious omission",
            "confidence": 0.9}
     """
 
@@ -175,6 +178,8 @@ class MissingObjectAttribute(DetectionTask):
             if not name or name.lower() in declared_lc:
                 continue
             if name.lower().startswith("ocel_"):
+                continue
+            if float(item.get("confidence") or 0.0) < MIN_SUGGESTION_CONFIDENCE:
                 continue
             clean.append({
                 "name": name,

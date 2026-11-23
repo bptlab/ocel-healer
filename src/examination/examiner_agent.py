@@ -188,7 +188,7 @@ Schema:
    "<column>": {{
      "meaning": "<one sentence>",
      "value_source": "peer_objects|events|object_id|domain_knowledge|derived_from_other_attributes|unknown",
-     "domain_knowledge_applicable": <true if this is a stable real-world fact (weight, brand, category) that could be looked up by entity name>,
+     "domain_knowledge_applicable": <true if this is a stable real-world fact (a physical measure, a brand, a category) that could be looked up by entity name>,
      "null_expected_by_design": <true if NULL here is a structural property of the storage, not a data defect>,
      "repair_hint": "<one sentence: how should a repair agent fill a genuinely missing value here?>"
    }}

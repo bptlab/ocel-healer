@@ -11,9 +11,8 @@ __pycache__/
 # Generated artifacts (recreated by running the tools)
 # - examination reports, written next to each log
 data/**/examination/
-# - per-run outputs of src.evaluation.evaluate_hints / summarize_runs
-data/evaluation/runs/
-data/evaluation/summary.md
+data/evaluation/
+data/synthetic/order-management-eval.sqlite
 
 # OS / editor cruft
 .DS_Store

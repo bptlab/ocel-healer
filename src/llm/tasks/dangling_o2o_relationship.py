@@ -1,13 +1,16 @@
 from src.llm.actions import ActionResult, relation_swap_target
-from src.llm.sampling import sample_candidates
 from src.llm.schemas import InferredReferentOutput
 from src.llm.tasks._base import ResolutionTask
+from src.llm.tasks._dangling import dangling_rule, missing_sides, side_candidates
 
 
 _O2O_SIDES = {
-    "source": {"column": "ocel_source_id", "pk": ["ocel_target_id", "ocel_qualifier"]},
-    "target": {"column": "ocel_target_id", "pk": ["ocel_source_id", "ocel_qualifier"]},
+    "source": {"column": "ocel_source_id", "pk": ["ocel_target_id", "ocel_qualifier"],
+               "kind": "object"},
+    "target": {"column": "ocel_target_id", "pk": ["ocel_source_id", "ocel_qualifier"],
+               "kind": "object"},
 }
+_O2O_PK = ["ocel_source_id", "ocel_target_id", "ocel_qualifier"]
 
 
 class DanglingO2ORelationship(ResolutionTask):
@@ -17,39 +20,42 @@ class DanglingO2ORelationship(ResolutionTask):
 
     TASK = """
         An `object_object` relation references an object that does not exist
-        in the `object` table. Pick the most likely intended referent for
-        the missing end from the candidate list.
+        in the `object` table, most likely through a typo. Pick the intended
+        referent for the missing end from the candidate list.
     """
 
     INPUTS = """
         - violation.missing_side    'source' or 'target' — which end is missing
         - violation.ocel_qualifier  names the relationship (often implies
-                                    the type of the missing end, e.g.
-                                    `belongs_to`, `part_of`, `parent`)
+                                    the type of the missing end)
         - object                    the known end's id, type, attributes
-        - candidate_objects         up to 200 {ocel_id, ocel_type} drawn
-                                    from the `object` table
+        - candidate_objects         up to 10 {ocel_id, ocel_type,
+                                    similarity}: the existing ids closest
+                                    to the dangling one, best first
     """
 
     METHOD = """
         1. Use `violation.ocel_qualifier` together with the known end's
            type to infer the expected `ocel_type` of the missing end
-           (e.g. an order that `belongs_to` implies a customer).
+           (e.g. a `type A` source under qualifier `q1` always points to
+           `type B` targets).
         2. Filter `candidate_objects` to entries whose type matches.
-        3. Among survivors, prefer ids that share a naming prefix with
-           the known end (e.g. `o-42` pairs with `c-42`).
+        3. Among survivors, prefer the id that differs from the dangling
+           id by a plausible typo (one changed, missing, doubled or swapped
+           character).
         4. Return one `ocel_id` from `candidate_objects` verbatim, or null
            when no candidate plausibly matches.
     """
 
     EXAMPLES = """
         violation.missing_side = 'target'
-        violation.ocel_qualifier = 'belongs_to'
-        object = {ocel_id: 'o-42', ocel_type: 'order'}
-        candidate_objects = [{ocel_id: 'c-42', ocel_type: 'customer'},
-                             {ocel_id: 'p-1',  ocel_type: 'product'}]
-        → {"inferred_referent": "c-42",
-           "rationale": "'belongs_to' from an order implies customer; c-42 matches and shares the '-42' suffix",
+        violation.ocel_target_id = 'b-4422'
+        violation.ocel_qualifier = 'q1'
+        object = {ocel_id: 'a-42', ocel_type: 'type A'}
+        candidate_objects = [{ocel_id: 'b-422', ocel_type: 'type B', similarity: 0.89},
+                             {ocel_id: 'c-4422', ocel_type: 'type C', similarity: 0.83}]
+        → {"inferred_referent": "b-422",
+           "rationale": "'q1' from a type A object points to type B; 'b-422' differs from 'b-4422' by one doubled character",
            "confidence": 0.85}
     """
 
@@ -59,18 +65,15 @@ class DanglingO2ORelationship(ResolutionTask):
             return row.get("ocel_target_id"), row.get("target_type")
         return row.get("ocel_source_id"), row.get("source_type")
 
+    def rule_action(self, conn, row: dict) -> ActionResult | None:
+        return dangling_rule(conn, row, table="object_object", sides=_O2O_SIDES, pk_cols=_O2O_PK)
+
     def extend_context(self, conn, ctx: dict, row: dict) -> None:
-        anchor_id, _ = self.anchor(row)
-        # We don't know the expected type from the qualifier alone here
-        # (relations like 'belongs_to' don't name the target type), so
-        # fall back to the random-plus-prefix mix.
-        ctx["candidate_objects"] = sample_candidates(
-            conn,
-            anchor_id=anchor_id,
-            expected_type=None,
-            kind="object",
-            k=50,
-        )
+        # Qualifiers like 'belongs_to' don't name the missing end's type,
+        # so the candidates are ranked by similarity alone.
+        sides = missing_sides(row, _O2O_SIDES)
+        if sides:
+            ctx["candidate_objects"] = side_candidates(conn, row, _O2O_SIDES[sides[0]])
 
     def parse_payload(self, row: dict, payload: dict) -> ActionResult:
         new = payload.get("inferred_referent")

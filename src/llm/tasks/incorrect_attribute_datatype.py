@@ -1,6 +1,31 @@
+import ast
+
 from src.llm.actions import ActionResult, object_attribute_target
 from src.llm.schemas import CoercedValueOutput
 from src.llm.tasks._base import ResolutionTask
+
+# Text that stands for "no value": nothing to coerce, so the cell is emptied
+# and the resulting missing value is repaired on its own.
+PLACEHOLDERS = {"", "unknown", "n/a", "na", "none", "null", "nan", "-", "?", "tbd"}
+
+
+def placeholder_to_null(row: dict, target: dict | None) -> ActionResult | None:
+    """Empty a cell holding a placeholder string instead of guessing a value."""
+    try:
+        value = ast.literal_eval(str(row.get("actual_value")))
+    except (ValueError, SyntaxError):
+        value = row.get("actual_value")
+    if target is None or not isinstance(value, str) or value.strip().lower() not in PLACEHOLDERS:
+        return None
+    return ActionResult.update(
+        target_table=target["target_table"],
+        target_pk=target["target_pk"],
+        column=target["column"],
+        old_value=target["old_value"],
+        new_value=None,
+        reason=f"{value!r} is a placeholder for an unknown value: emptied, "
+               "so it can be filled as a missing value.",
+    )
 
 
 class IncorrectAttributeDatatype(ResolutionTask):
@@ -58,6 +83,9 @@ class IncorrectAttributeDatatype(ResolutionTask):
         # examples of correctly typed values.
         target = row.get("attribute_name") or row.get("attribute")
         self._attach_peers(conn, ctx, row, target_col=target)
+
+    def rule_action(self, conn, row: dict) -> ActionResult | None:
+        return placeholder_to_null(row, object_attribute_target(row))
 
     def parse_payload(self, row: dict, payload: dict) -> ActionResult:
         new = payload.get("coerced_value")

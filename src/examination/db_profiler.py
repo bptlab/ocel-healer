@@ -169,7 +169,7 @@ _DIGIT_RUN = re.compile(r"\d+")
 
 def id_template(value: str) -> str:
     """Collapse digit runs into '#' so ids with a shared shape align:
-    'o-990001' -> 'o-######'. Non-digit text is kept verbatim."""
+    'x-1001' -> 'x-####'. Non-digit text is kept verbatim."""
     return _DIGIT_RUN.sub(lambda m: "#" * len(m.group()), value.strip())
 
 

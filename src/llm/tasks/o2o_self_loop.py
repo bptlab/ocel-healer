@@ -36,6 +36,10 @@ class O2OSelfLoop(ResolutionTask):
 
     EXAMPLES = ""
 
+    def rule_action(self, conn, row: dict) -> ActionResult:
+        """Deterministic; the LLM is never asked."""
+        return self.parse_payload(row, {})
+
     def parse_payload(self, row: dict, payload: dict) -> ActionResult:
         return ActionResult.delete_all(
             target_table="object_object",

@@ -17,61 +17,80 @@ class MissingEventTimestamp(ResolutionTask):
         One event row has no `ocel_time`. Interpolate a plausible timestamp
         from the timestamps of the other events touching the same object(s)
         — the "neighbor events". Match the format of the neighbors' timestamps
-        exactly. If the neighbors give no bracketing signal, return null.
+        exactly. A bound on one side is enough; return null only when no
+        neighbor has a timestamp.
     """
 
     INPUTS = """
-        - violation.ocel_id       the id of the event with a missing timestamp
-        - violation.event_type    the event's type (e.g. `pay order`)
-        - violation.target_table  concrete per-type sub-table
-                                  (e.g. `event_PayOrder`); FYI only
-        - related_objects         list of {ocel_object_id, ocel_type,
-                                  ocel_qualifier} — the objects this event
-                                  touches
-        - neighbor_events         list of {ocel_id, ocel_type, ocel_time,
-                                  qualifier, ocel_object_id} — every other
-                                  event touching those same objects, sorted
-                                  by timestamp
-        - expected_format         one representative timestamp string from a
-                                  neighbor; use this format verbatim
+        - violation.ocel_id         the id of the event with a missing timestamp
+        - violation.event_type      the event's type
+        - violation.target_table    concrete per-type sub-table; FYI only
+        - related_objects           list of {ocel_object_id, ocel_type,
+                                    ocel_qualifier} — the objects this event
+                                    touches
+        - neighbor_events           list of {ocel_id, ocel_type, ocel_time,
+                                    qualifier, ocel_object_id} — every other
+                                    event touching those same objects, sorted
+                                    by timestamp
+        - expected_format           one representative timestamp string from a
+                                    neighbor; use this format verbatim
+        - event_type_order          the usual order of event types in this
+                                    log, learned from the data: list of
+                                    {event_type, position}, where position 0
+                                    means first in an object's lifecycle and
+                                    1 means last
     """
 
     METHOD = """
-        1. Read the anchor's `event_type`. Identify its position in the
-           process order (see the temporal family focus for the typical
-           lifecycle).
-        2. Locate the anchor's neighbors that flank it in that order. For
-           example, a `pay order` event should sit AFTER `place order` /
-           `confirm order` and BEFORE `pick item` / `send package` for the
-           same order.
+        1. Find the anchor's `event_type` in `event_type_order`. Event types
+           with a lower position usually happen before it, those with a
+           higher position after it.
+        2. Locate the anchor's neighbors that flank it in that order: the
+           latest neighbor whose type usually comes before the anchor's, and
+           the earliest one whose type usually comes after it.
         3. Pick a timestamp between the tightest bracketing pair. When
            several object-lifecycles apply (an event can touch multiple
            objects), all their neighbor bounds must be respected.
         4. Match `expected_format` verbatim — same separator, same
            precision. Do not switch to ISO with `T` or add a timezone.
-        5. Return `inferred_timestamp: null` when either no neighbors have
-           timestamps OR neighbors do not bracket the anchor at all AND
-           the anchor's activity does not independently hint at a value.
+        5. If neighbors bound the anchor on one side only (e.g. the first
+           event of a lifecycle has only later neighbors), pick a time
+           shortly before the earliest later neighbor (or shortly after the
+           latest earlier one).
+        6. Return `inferred_timestamp: null` only when no neighbor has a
+           timestamp.
     """
 
     EXAMPLES = """
-        violation = {ocel_id: 'pay order:990010', event_type: 'pay order',
-                     target_table: 'event_PayOrder'}
+        violation = {ocel_id: 'ev-10', event_type: 'E3'}
+        event_type_order = [{event_type: 'E1', position: 0.0},
+                            {event_type: 'E2', position: 0.2},
+                            {event_type: 'E3', position: 0.5},
+                            {event_type: 'E4', position: 0.8}]
         neighbor_events = [
-          {ocel_type: 'place order',  ocel_time: '2023-04-03 12:00:00'},
-          {ocel_type: 'confirm order',ocel_time: '2023-04-03 12:05:00'},
-          {ocel_type: 'pick item',    ocel_time: '2023-04-03 14:00:00'},
-          {ocel_type: 'send package', ocel_time: '2023-04-03 16:00:00'},
+          {ocel_type: 'E1', ocel_time: '2020-01-02 12:00:00'},
+          {ocel_type: 'E2', ocel_time: '2020-01-02 12:05:00'},
+          {ocel_type: 'E4', ocel_time: '2020-01-02 14:00:00'},
         ]
-        expected_format = '2023-04-03 12:00:00'
-        → {"inferred_timestamp": "2023-04-03 13:00:00",
-           "rationale": "pay order sits after confirm order (12:05) and before pick item (14:00); picked midpoint",
+        expected_format = '2020-01-02 12:00:00'
+        → {"inferred_timestamp": "2020-01-02 13:00:00",
+           "rationale": "E3 usually sits after E2 (12:05) and before E4 (14:00); picked the midpoint",
            "confidence": 0.9}
 
-        violation = {ocel_id: 'item out of stock:990300', event_type: 'item out of stock'}
+        violation = {ocel_id: 'ev-20', event_type: 'E1'}
+        event_type_order = [{event_type: 'E1', position: 0.0},
+                            {event_type: 'E2', position: 0.2}]
+        neighbor_events = [
+          {ocel_type: 'E2', ocel_time: '2020-02-03 09:40:00'},
+        ]
+        → {"inferred_timestamp": "2020-02-03 09:10:00",
+           "rationale": "E1 usually comes first, before E2 (09:40); only an upper bound, picked shortly before it",
+           "confidence": 0.6}
+
+        violation = {ocel_id: 'ev-30', event_type: 'E4'}
         neighbor_events = []
         → {"inferred_timestamp": null,
-           "rationale": "no neighbor events available; cannot bracket",
+           "rationale": "neighbor_events is empty; nothing to anchor a timestamp on",
            "confidence": 0.2}
     """
 
